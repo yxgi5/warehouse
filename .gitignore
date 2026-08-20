@@ -1,0 +1,20 @@
+# 运行时数据（不入库）
+warehouse.db
+warehouse.db-journal
+warehouse.db-wal
+warehouse.db-shm
+photos/
+backups/
+logs/
+__pycache__/
+*.pyc
+.cleanup/
+
+# 环境
+.venv/
+venv/
+.env
+
+# IDE
+.idea/
+.vscode/
