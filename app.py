@@ -46,6 +46,24 @@ st.markdown("""
 section[data-testid="stMain"] {
     padding-bottom: 80px;
 }
+/* 工具栏按钮组整体居中：侧边栏折叠/展开改变的是工具栏容器（fixed）的 left/width，
+   按钮组始终保持在主内容区的横向中心，不会跟着左移。
+   Streamlit 的 stVerticalBlock 默认会被主题 max-width 限制，这里先让它占满 fixed 容器；
+   内部 stHorizontalBlock 再限制最大宽度并居中，防止按钮被压成竖排。 */
+.st-key-list_toolbar [data-testid="stVerticalBlock"],
+.st-key-container_toolbar [data-testid="stVerticalBlock"] {
+    width: 100% !important;
+    max-width: none !important;
+}
+.st-key-list_toolbar [data-testid="stHorizontalBlock"],
+.st-key-container_toolbar [data-testid="stHorizontalBlock"] {
+    width: min(960px, 100%);
+    margin: 0 auto;
+}
+.st-key-list_toolbar button,
+.st-key-container_toolbar button {
+    white-space: nowrap !important;
+}
 </style>
 """, unsafe_allow_html=True)
 

@@ -74,7 +74,8 @@ python -m streamlit run app.py
 
 - **工具栏吸底**：物品/容器列表的 详情/编辑/删除/导出 工具栏用 `st.container(key="list_toolbar"/"container_toolbar")` 包裹，注入 CSS `position: fixed; bottom: 0`——工具栏**钉死在视口底部，不依赖页面滚动**，页面再短也常驻可见。
   - **实现要点**：早期尝试 `position: sticky` 失败——Streamlit 1.40 的多层 `stVerticalBlockBorderWrapper` 使 `.st-key-*` 的包含块仅有自身高度（~53px），sticky 无处可粘；fixed 方案直接对工具栏容器定位，绕开包含块问题。left/width 由内嵌 JS 组件（不可见 iframe）实时同步主内容区 `stMain` 的位置到 CSS 变量 `--toolbar-left/--toolbar-width`，侧边栏折叠/窗口缩放自动对齐，异常时回退 `21rem`（展开侧边栏默认宽度）。已用 Chrome headless 实测：滚动后工具栏 bottom 恒定贴视口底（left=336、width=1064），表格底部留 80px 防遮挡。
-  - **提示位置**：选中提示移到表格与工具栏之间，避免吸底后提示被顶出视线。
+  - **按钮组居中**：工具栏内部按钮 + 计数提示作为一个整体在主内容区横向居中。实现上让内部 `stVerticalBlock` 占满 fixed 容器，`stHorizontalBlock` 限制最大宽度 960px 并 `margin: 0 auto`；按钮设 `white-space: nowrap` 避免被压成竖排。侧边栏折叠后主区变宽，按钮组仍保持在主区中心，不会左移。
+  - **提示位置与文案**：选中提示移到表格与工具栏之间，避免吸底后提示被顶出视线；物品/容器两处提示统一为 "...then use the toolbar below"，并移除 "Ctrl for multi-select"——`st.dataframe` 的 `selection_mode="multi-row"` 下直接点击复选框即可多选，无需 Ctrl。
 - **容器树行内装饰**：树行改用 HTML 渲染——等宽字体字符画连接线（`├─ └─ │`）+ 🗂️/📦 图标（有子容器/叶子）+ 数量徽标（`color-mix` 取主题色）+ 📍位置 + hover 高亮；缩进用 `margin-left` 按深度递增，保留详情按钮原生交互。
 - **列表高度**：表格固定 300px（列表内部滚动）；fixed 工具栏不依赖滚动，任何页面长度下都常驻视口底部。
 
