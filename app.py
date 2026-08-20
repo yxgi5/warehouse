@@ -21,6 +21,22 @@ i18n.set_lang(st.session_state.get('lang', 'en'))
 # --- 页面配置（必须是第一个 st 调用） ---
 st.set_page_config(page_title=i18n.t("app.title"), layout="wide")
 
+# --- 全局样式：列表工具栏吸底（sticky 不脱离文档流、不遮挡内容） ---
+# 工具类 .st-key-<key> 由 st.container(key=...) 生成（Streamlit 1.39+），
+# 配合 position: sticky + bottom:0 使工具栏在页面滚动时始终固定在视口底部。
+st.markdown("""
+<style>
+.st-key-list_toolbar, .st-key-container_toolbar {
+    position: sticky;
+    bottom: 0;
+    background: var(--background-color);
+    padding: 8px 0 4px;
+    z-index: 1000;
+    border-top: 1px solid rgba(128, 128, 128, 0.15);
+}
+</style>
+""", unsafe_allow_html=True)
+
 # --- 日志与连接（连接复用：Streamlit 每次 rerun 不重复建连） ---
 db.setup_logging()
 get_conn = st.cache_resource(db.get_conn)

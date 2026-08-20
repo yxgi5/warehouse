@@ -249,51 +249,52 @@ def render_list_view(conn, df_all, total_items, container_options):
     selected_count = len(selected_item_ids)
     st.session_state.selected_indices = list(event.selection.rows)
 
-    # --- 工具栏（表格下方，与容器列表布局一致：按钮常驻、不滚动即可操作）---
-    # 注意：按钮不做 disabled（否则选中后需等一次额外 rerun 按钮才可点，
-    # 因为本轮的选中结果要渲染完 dataframe 才能拿到），改为点击时校验。
-    col_tool1, col_tool2, col_tool3, col_tool4, col_tool5 = st.columns([1, 1, 1, 1, 4])
-    with col_tool1:
-        if st.button(i18n.t("items.view_detail"), use_container_width=True):
-            if selected_count == 1:
-                st.session_state.detail_item_id = selected_item_ids[0]
-                st.rerun()
-            else:
-                st.toast(i18n.t("items.hint_need_one"))
-    with col_tool2:
-        if st.button(i18n.t("items.edit"), use_container_width=True):
-            if selected_count == 1:
-                start_edit(conn, selected_item_ids[0], container_options)
-                st.rerun()
-            else:
-                st.toast(i18n.t("items.hint_need_one"))
-    with col_tool3:
-        if st.button(i18n.t("items.delete"), use_container_width=True):
-            if selected_count > 0:
-                batch_delete_dialog(conn, selected_item_ids)
-            else:
-                st.toast(i18n.t("items.hint_need_select"))
-    with col_tool4:
-        if st.button(i18n.t("items.export_selected"), use_container_width=True):
-            if selected_count > 0:
-                export_df = df_all[df_all['id'].isin(selected_item_ids)]
-                csv = export_df.to_csv(index=False).encode('utf-8-sig')
-                b64 = base64.b64encode(csv).decode()
-                href = f'<a href="data:file/csv;base64,{b64}" download="export_selected.csv">{i18n.t("items.click_download")}</a>'
-                st.markdown(href, unsafe_allow_html=True)
-                st.success(i18n.t("items.export_ok"))
-            else:
-                st.toast(i18n.t("items.hint_need_select"))
-    with col_tool5:
-        st.caption(i18n.t("items.list_count", total=total_items, n=selected_count))
-
-    # --- 选中提示（与容器列表一致，放工具栏下方）---
+    # --- 选中提示（放表格与吸底工具栏之间，避免被固定栏顶出视线）---
     if total_items > 0 and selected_count == 0:
         st.info(i18n.t("items.hint_no_selection"))
     elif selected_count == 1:
         st.success(i18n.t("items.hint_one"))
     elif selected_count > 1:
         st.success(i18n.t("items.hint_many", n=selected_count))
+
+    # --- 工具栏（sticky 吸底：页面滚动时固定在视口底部，见 app.py 全局样式）---
+    # 注意：按钮不做 disabled（否则选中后需等一次额外 rerun 按钮才可点，
+    # 因为本轮的选中结果要渲染完 dataframe 才能拿到），改为点击时校验。
+    with st.container(key="list_toolbar"):
+        col_tool1, col_tool2, col_tool3, col_tool4, col_tool5 = st.columns([1, 1, 1, 1, 4])
+        with col_tool1:
+            if st.button(i18n.t("items.view_detail"), use_container_width=True):
+                if selected_count == 1:
+                    st.session_state.detail_item_id = selected_item_ids[0]
+                    st.rerun()
+                else:
+                    st.toast(i18n.t("items.hint_need_one"))
+        with col_tool2:
+            if st.button(i18n.t("items.edit"), use_container_width=True):
+                if selected_count == 1:
+                    start_edit(conn, selected_item_ids[0], container_options)
+                    st.rerun()
+                else:
+                    st.toast(i18n.t("items.hint_need_one"))
+        with col_tool3:
+            if st.button(i18n.t("items.delete"), use_container_width=True):
+                if selected_count > 0:
+                    batch_delete_dialog(conn, selected_item_ids)
+                else:
+                    st.toast(i18n.t("items.hint_need_select"))
+        with col_tool4:
+            if st.button(i18n.t("items.export_selected"), use_container_width=True):
+                if selected_count > 0:
+                    export_df = df_all[df_all['id'].isin(selected_item_ids)]
+                    csv = export_df.to_csv(index=False).encode('utf-8-sig')
+                    b64 = base64.b64encode(csv).decode()
+                    href = f'<a href="data:file/csv;base64,{b64}" download="export_selected.csv">{i18n.t("items.click_download")}</a>'
+                    st.markdown(href, unsafe_allow_html=True)
+                    st.success(i18n.t("items.export_ok"))
+                else:
+                    st.toast(i18n.t("items.hint_need_select"))
+        with col_tool5:
+            st.caption(i18n.t("items.list_count", total=total_items, n=selected_count))
 
 
 # ==================== 卡片视图 ====================

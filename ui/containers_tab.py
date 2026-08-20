@@ -324,53 +324,55 @@ def render_browse(conn, containers_df):
     if selected_count > 0:
         selected_container_ids = df_display.iloc[selected_indices]['id'].tolist()
 
-    # 工具栏（所有按钮添加唯一 key）
-    col_tool1, col_tool2, col_tool3, col_tool4, col_tool5 = st.columns([1, 1, 1, 1, 4])
-    with col_tool1:
-        if selected_count == 1:
-            if st.button(i18n.t("containers.open_detail"), key="container_detail_active",
-                         use_container_width=True):
-                st.session_state.container_detail_id = selected_container_ids[0]
-                st.rerun()
-        else:
-            st.button(i18n.t("containers.open_detail"), key="container_detail_disabled",
-                      disabled=True, use_container_width=True)
-    with col_tool2:
-        if selected_count == 1:
-            if st.button(i18n.t("items.edit"), key="container_edit_active", use_container_width=True):
-                st.session_state.edit_container_id = selected_container_ids[0]
-                st.rerun()
-        else:
-            st.button(i18n.t("items.edit"), key="container_edit_disabled", disabled=True, use_container_width=True)
-    with col_tool3:
-        if selected_count > 0:
-            if st.button(i18n.t("items.delete"), key="container_delete_active", use_container_width=True):
-                # 检查选中的容器是否可删除（无物品且无子容器）
-                non_deletable = []
-                for cid in selected_container_ids:
-                    item_cnt, child_cnt = repo.container_usage(conn, cid)
-                    if item_cnt > 0 or child_cnt > 0:
-                        non_deletable.append((cid, item_cnt, child_cnt))
-                if non_deletable:
-                    st.error(i18n.t("containers.not_empty_list", list=non_deletable))
-                else:
-                    names = [df_display[df_display['id'] == cid].iloc[0]['name'] for cid in selected_container_ids]
-                    confirm_container_delete(conn, selected_container_ids, "、".join(names))
-        else:
-            st.button(i18n.t("items.delete"), key="container_delete_disabled", disabled=True, use_container_width=True)
-    with col_tool4:
-        if st.button(i18n.t("containers.add_btn"), key="container_add_btn", use_container_width=True):
-            st.session_state.add_container_mode = True
-            st.rerun()
-    with col_tool5:
-        st.caption(i18n.t("containers.list_count", total=len(containers_df), n=selected_count))
-
+    # --- 选中提示（放表格与吸底工具栏之间，避免被固定栏顶出视线）---
     if len(containers_df) > 0 and selected_count == 0:
         st.info(i18n.t("containers.hint_no_selection"))
     elif selected_count == 1:
         st.success(i18n.t("containers.hint_one"))
     elif selected_count > 1:
         st.success(i18n.t("containers.hint_many", n=selected_count))
+
+    # --- 工具栏（sticky 吸底：页面滚动时固定在视口底部，见 app.py 全局样式）---
+    with st.container(key="container_toolbar"):
+        col_tool1, col_tool2, col_tool3, col_tool4, col_tool5 = st.columns([1, 1, 1, 1, 4])
+        with col_tool1:
+            if selected_count == 1:
+                if st.button(i18n.t("containers.open_detail"), key="container_detail_active",
+                             use_container_width=True):
+                    st.session_state.container_detail_id = selected_container_ids[0]
+                    st.rerun()
+            else:
+                st.button(i18n.t("containers.open_detail"), key="container_detail_disabled",
+                          disabled=True, use_container_width=True)
+        with col_tool2:
+            if selected_count == 1:
+                if st.button(i18n.t("items.edit"), key="container_edit_active", use_container_width=True):
+                    st.session_state.edit_container_id = selected_container_ids[0]
+                    st.rerun()
+            else:
+                st.button(i18n.t("items.edit"), key="container_edit_disabled", disabled=True, use_container_width=True)
+        with col_tool3:
+            if selected_count > 0:
+                if st.button(i18n.t("items.delete"), key="container_delete_active", use_container_width=True):
+                    # 检查选中的容器是否可删除（无物品且无子容器）
+                    non_deletable = []
+                    for cid in selected_container_ids:
+                        item_cnt, child_cnt = repo.container_usage(conn, cid)
+                        if item_cnt > 0 or child_cnt > 0:
+                            non_deletable.append((cid, item_cnt, child_cnt))
+                    if non_deletable:
+                        st.error(i18n.t("containers.not_empty_list", list=non_deletable))
+                    else:
+                        names = [df_display[df_display['id'] == cid].iloc[0]['name'] for cid in selected_container_ids]
+                        confirm_container_delete(conn, selected_container_ids, "、".join(names))
+            else:
+                st.button(i18n.t("items.delete"), key="container_delete_disabled", disabled=True, use_container_width=True)
+        with col_tool4:
+            if st.button(i18n.t("containers.add_btn"), key="container_add_btn", use_container_width=True):
+                st.session_state.add_container_mode = True
+                st.rerun()
+        with col_tool5:
+            st.caption(i18n.t("containers.list_count", total=len(containers_df), n=selected_count))
 
 
 # ==================== 卡片视图（Phase 6） ====================
