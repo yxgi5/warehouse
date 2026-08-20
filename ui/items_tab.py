@@ -261,7 +261,7 @@ def render_list_view(conn, df_all, total_items, container_options):
     # 未选中时按钮 disabled（与容器列表一致）：详情/编辑需恰好选中 1 行，
     # 删除/导出需至少 1 行。选中后 on_select="rerun" 会立即刷新按钮状态。
     with st.container(key="list_toolbar"):
-        col_tool1, col_tool2, col_tool3, col_tool4, col_tool5 = st.columns([1, 1, 1, 1, 4])
+        col_tool1, col_tool2, col_tool3, col_tool4, col_tool5 = st.columns([2, 2, 2, 2, 5])
         with col_tool1:
             if selected_count == 1:
                 if st.button(i18n.t("items.view_detail"), key="item_detail_active",
