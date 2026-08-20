@@ -72,7 +72,12 @@
 ## Git 历史
 
 - **2026-08-20 重建**：仓库 `.git` 在 rebase 操作后意外丢失（无 remote 无法找回对象库），已按对话上下文**重建提交脉络**：根提交 `69dd304` 承载全量代码快照，其后 9 个提交按丢失前的提交 message 顺序重建（均为占位提交，tree 与最终版一致——**checkout 任意提交都有完整代码，不会出现空目录**；中间阶段的代码快照无法复原，请以 readme 各 Phase 章节了解演进过程）。
-- **重建后的提交链**（自新到旧，HEAD=`b4ece10`）：
+- **考古恢复的原始哈希链**（2026-08-20 追加）：重建后从 D 盘回收站发现丢失 `.git` 的部分残留（`$RECYCLE.BIN\...\$RUC0BLS.git`，13:42 删除时刻），其中的 `gitk.cache` 记录了 **gitk 展示过的全部原始提交的真实哈希**，据此恢复 48 个哈希与主链：
+  - **Phase 5+（message 已知，与各 Phase 章节对应）**：`716b49ba`(默认英文) ← `9c06dadf`(布局对齐) ← `a93671fc`(工具栏) ← `c21cb7fc`(seed) ← `851e0604`(树内详情) ← `be778d4f`(树层级) ← `8ff22cb0`(树空白) ← `16531972`(容器照片) ← `7b27c8b3`(i18n)
+  - **Phase 1-4 主链（哈希真实、message 未留存）**：`20891923` → `ac028e75` → `4787f147` → `adbf1b8d` → `cf9395ca` → `44e9fde8` → `2e18986e`（其后接 `7b27c8b3`）；另检出约 30 个分支/中间提交哈希。
+  - **内容级验证**：残留的 `index`（13:36 暂存快照）解析出 21 个文件 blob 哈希，与重建根提交 `69dd304` 逐文件对比 **20/21 一致**（仅 readme.txt 因丢失后补写历史而更新）——证明重建内容 = 丢失前 HEAD 内容。
+  - 原始 commit/tree/blob 对象数据仍无法恢复，真实哈希仅作追溯锚点；重建链使用新哈希。完整 48 哈希列表与 index 清单见备份目录 `recycle-evidence/`。
+- **重建后的提交链**（自新到旧，HEAD=`c6ece3f`）：
   - `b4ece10` refactor(i18n): set English as default UI language · 默认语言改为英文
   - `d88b0fe` refactor(items): align items list layout with containers · 物品列表布局对齐容器
   - `c9bee23` refactor(items): keep list view toolbar visible without scrolling · 列表工具栏常驻可见
@@ -83,7 +88,7 @@
   - `ed69e3e` feat(containers): container photos and browse views · 容器照片与浏览视图
   - `3f2bce8` feat(i18n): add bilingual zh/en support · 中英双语
   - `69dd304` chore(repo): full code snapshot as rebuild root · 重建根提交（全量代码快照）
-- **备份**：每次重要提交后建议导出 bundle 到 `D:\repos\warehouse_v2_backup\warehouse_v2-<时间戳>.bundle`（`git bundle create ... --all`），并强烈建议关联远程仓库（`git remote add origin <url>`）防止单点丢失。
+- **备份**：2026-08-20 13:55 起执行多重备份到 `D:\repos\warehouse_v2_backup\<时间戳>\`（`full.bundle` + `mirror.git` 镜像 + `gitdir-copy` 完整 .git 复制 + `recycle-evidence/` 考古证据）。重要操作后建议刷新 bundle（`git bundle create ... --all`），并强烈建议关联远程仓库（`git remote add origin <url>`）防止单点丢失。
 
 ## 自测
 
