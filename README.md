@@ -1,10 +1,13 @@
-# 个人物品仓库 (warehouse_v2)
+# 个人物品仓库 (warehouse)
 
 ## 安装与运行
 
 ```bash
 pip install -r requirements.txt
+
 streamlit run app.py
+# or
+python -m streamlit run app.py
 ```
 
 依赖已装到系统 Python38（streamlit 1.40.1 / pandas 2.0.3 / pillow 10.4.0）。
@@ -62,9 +65,18 @@ streamlit run app.py
 - **N+1 消除**：卡片视图用 `load_container_first_image_map()` / `item_count_map()` 批量取首图与物品数。
 
 ## 列表视图操作优化（Phase 6.1）
+
 - **工具栏在表格下方**：「物品浏览」列表视图的 查看详情/编辑/删除/导出 工具栏与容器列表布局一致，放在表格下方，常驻可见，选中行后**无需滚动即可操作**。
 - **固定高度**：表格高度固定 300px（与容器列表一致），不再提供高度滑块。
 - **交互时序**：工具栏按钮始终可点，未选中时点击给 toast 提示（不做 disabled——`st.dataframe` 的选中结果渲染后才能拿到，disabled 会导致按钮状态滞后一次交互）。工具栏在表格之后渲染，直接读取本轮选中结果，无滞后。
+
+## 列表工具栏吸底与容器树美化（Phase 6.2）
+
+- **工具栏吸底**：物品/容器列表的 详情/编辑/删除/导出（新增）工具栏用 `st.container(key="list_toolbar"/"container_toolbar")` 包裹，注入 CSS `position: sticky; bottom: 0`——页面滚动时工具栏始终吸附在视口底部，不脱离文档流、不遮挡内容。
+  - **实现要点**：直接对 `.st-key-*` 元素设 sticky 会失效——Streamlit 1.40 的多层 `stVerticalBlockBorderWrapper` 使该元素的包含块仅有自身高度（~53px），sticky 无处可粘。正确做法是用 `:has()` 选中包含工具栏的 `stVerticalBlockBorderWrapper` 层（其包含块是完整主内容块）再设 sticky。已用 Chrome headless 实测：修复前滚动后工具栏 top=2005（随内容滚走），修复后 top=856/896（紧贴视口底部）。
+  - **提示位置**：选中提示移到表格与工具栏之间，避免吸底后提示被顶出视线。
+- **容器树行内装饰**：树行改用 HTML 渲染——等宽字体字符画连接线（`├─ └─ │`）+ 🗂️/📦 图标（有子容器/叶子）+ 数量徽标（`color-mix` 取主题色）+ 📍位置 + hover 高亮；缩进用 `margin-left` 按深度递增，保留详情按钮原生交互。
+- **列表高度**：表格固定 300px（列表内部滚动）；页面滚动仅在内容超出视口时发生，此时工具栏才触发吸底（数据不足一屏时工具栏本就在底部可见，吸底不生效属正常）。
 
 ## 提交规范（Git Convention）
 
