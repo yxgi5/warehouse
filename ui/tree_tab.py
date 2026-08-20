@@ -2,9 +2,8 @@
 """Tab5 容器树：纯容器层级树，体现容器间的父子相对关系。
 
 设计要点：
-- 每行 = 层级缩进 + 图标（🗂️ 有子容器 / 📦 叶子）+ 容器名 + 物品数徽标 + 位置；
-  悬停高亮，层级用缩进与左侧竖线表达（不再用 ├─ └─ 字符画）。
-  具体物品请看「容器管理」Tab 的容器详情页清单。
+- 每行 = 字符画层级连接线（├─ └─ │）+ 图标 + 容器名 + 物品数徽标 + 位置；
+  连接线与等宽字体前缀保证层级一眼可辨，图标/徽标/hover 负责提升美观。
 - 行尾「详情」按钮在树 Tab 内就地打开该容器的详情页
   （复用 containers_tab.render_detail_readonly，与容器管理 Tab 详情一致；
   返回按钮回到树）。注：Streamlit 1.40 的 st.tabs 不支持 key/on_change，
@@ -18,19 +17,27 @@ import repo
 import i18n
 from ui.containers_tab import render_detail_readonly
 
-# 树行样式：CSS 变量跟随 Streamlit 主题（浅/深色自适应），行 hover 高亮
+# 树行样式：字符画连接线保留层级直观性，图标/徽标/hover 提升美观，
+# CSS 变量跟随 Streamlit 主题（浅/深色自适应）。
 _TREE_CSS = """
 <style>
 .tree-row {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 3px 8px;
-    border-radius: 6px;
-    border-left: 2px solid rgba(128, 128, 128, 0.25);
+    padding: 2px 6px;
+    border-radius: 4px;
     transition: background-color 0.15s;
 }
 .tree-row:hover { background: rgba(128, 128, 128, 0.08); }
+.tree-line {
+    font-family: monospace;
+    white-space: pre;
+    color: rgba(128, 128, 128, 0.55);
+    font-size: 1rem;
+    line-height: 1;
+    user-select: none;
+}
 .tree-icon { font-size: 1.05rem; line-height: 1; }
 .tree-name { font-weight: 500; }
 .tree-badge {
@@ -78,7 +85,7 @@ def render(conn, search, tag_filter):
 
     st.caption(i18n.t("tree.summary", containers=len(containers_df), items=len(df_all)))
 
-    def render_tree(parent_id=None, depth=0):
+    def render_tree(parent_id=None, prefix=""):
         if parent_id is None:
             children = containers_df[containers_df["parent_id"].isna()]
         else:
@@ -87,6 +94,9 @@ def render(conn, search, tag_filter):
         n = len(rows)
         for i, (_, row) in enumerate(rows.iterrows()):
             is_last = (i == n - 1)
+            branch = ""
+            if parent_id is not None:
+                branch = "└─ " if is_last else "├─ "
             cid = int(row["id"])
             count = item_counts.get(cid, 0)
             name = html.escape(str(row["name"]))
@@ -94,9 +104,11 @@ def render(conn, search, tag_filter):
             has_children = bool((containers_df["parent_id"] == cid).any())
             icon = "🗂️" if has_children else "📦"
             loc_html = f'<span class="tree-loc">📍 {location}</span>' if location else ""
-            # 行内装饰：margin-left 按深度缩进，徽标显示物品数，悬停高亮
+
+            line = f'{prefix}{branch}'
             row_html = (
-                f'<div class="tree-row" style="margin-left:{depth * 18}px;">'
+                f'<div class="tree-row">'
+                f'<span class="tree-line">{line}</span>'
                 f'<span class="tree-icon">{icon}</span>'
                 f'<span class="tree-name">{name}</span>'
                 f'<span class="tree-badge">{count}</span>'
@@ -112,6 +124,7 @@ def render(conn, search, tag_filter):
                     st.session_state.tree_detail_id = cid   # 树 Tab 内就地打开详情页
                     st.toast(i18n.t("tree.goto_detail", name=row["name"]))
                     st.rerun()
-            render_tree(cid, depth + 1)
+            child_prefix = prefix + ("   " if is_last else "│  ")
+            render_tree(cid, child_prefix)
 
     render_tree()
