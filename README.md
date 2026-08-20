@@ -2,8 +2,10 @@
 
 ## 安装与运行
 
-    pip install -r requirements.txt
-    streamlit run app.py
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
 
 依赖已装到系统 Python38（streamlit 1.40.1 / pandas 2.0.3 / pillow 10.4.0）。
 注意：本机 pip 请用默认官方源（清华镜像对该环境不可用）。
@@ -77,7 +79,9 @@
   - **Phase 1-4 主链（哈希真实、message 未留存）**：`20891923` → `ac028e75` → `4787f147` → `adbf1b8d` → `cf9395ca` → `44e9fde8` → `2e18986e`（其后接 `7b27c8b3`）；另检出约 30 个分支/中间提交哈希。
   - **内容级验证**：残留的 `index`（13:36 暂存快照）解析出 21 个文件 blob 哈希，与重建根提交 `69dd304` 逐文件对比 **20/21 一致**（仅 readme.txt 因丢失后补写历史而更新）——证明重建内容 = 丢失前 HEAD 内容。
   - 原始 commit/tree/blob 对象数据仍无法恢复，真实哈希仅作追溯锚点；重建链使用新哈希。完整 48 哈希列表与 index 清单见备份目录 `recycle-evidence/`。
-- **重建后的提交链**（自新到旧，HEAD=`c6ece3f`）：
+- **重建后的提交链**（自新到旧，HEAD=`4fa76e5`）：
+  - `4fa76e5` docs: record archaeologically recovered original commit hashes · 记录考古恢复的原始提交哈希链
+  - `c6ece3f` docs: describe rebuilt git history chain · 更新 Git 历史章节为重建后的提交链
   - `b4ece10` refactor(i18n): set English as default UI language · 默认语言改为英文
   - `d88b0fe` refactor(items): align items list layout with containers · 物品列表布局对齐容器
   - `c9bee23` refactor(items): keep list view toolbar visible without scrolling · 列表工具栏常驻可见
@@ -92,10 +96,12 @@
 
 ## 自测
 
-    python smoke_test.py      # AppTest 真实执行 app.py，验证无异常
-    python test_data_layer.py # 数据层单测 76 项（建表/迁移/标签/图片/删除/备份/搜索/CSV导入/MIME/容器图片）
-    python test_i18n.py       # i18n 单测 17 项（双语言 key 集一致/无空值/format/语言联动）
-    python test_e2e.py        # 端到端回归（新增→筛选→搜索→详情→编辑→清理→语言切换→容器卡片/详情，全 UI 链路）
+```bash
+python smoke_test.py      # AppTest 真实执行 app.py，验证无异常
+python test_data_layer.py # 数据层单测 76 项（建表/迁移/标签/图片/删除/备份/搜索/CSV导入/MIME/容器图片）
+python test_i18n.py       # i18n 单测 17 项（双语言 key 集一致/无空值/format/语言联动）
+python test_e2e.py        # 端到端回归（新增→筛选→搜索→详情→编辑→清理→语言切换→容器卡片/详情，全 UI 链路）
+```
 
 注：`test_e2e.py` 受 AppTest 1.40 边界限制——同一 widget 多次 `set_value` 会被上一轮回读值覆盖，脚本保证每个控件仅交互一次；"不误匹配"验证走 repo 层。
 
@@ -104,4 +110,3 @@
 - `warehouse.db`：SQLite 数据库（运行时生成）
 - `photos/`：上传的图片（运行时生成）
 - `backups/`：自动备份 zip（运行时生成）
-
