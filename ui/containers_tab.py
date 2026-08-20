@@ -334,7 +334,7 @@ def render_browse(conn, containers_df):
 
     # --- 工具栏（sticky 吸底：页面滚动时固定在视口底部，见 app.py 全局样式）---
     with st.container(key="container_toolbar"):
-        col_tool1, col_tool2, col_tool3, col_tool4, col_tool5 = st.columns([2, 2, 2, 2, 5])
+        col_tool1, col_tool2, col_tool3, col_tool4, col_tool5 = st.columns([3, 3, 3, 3, 5])
         with col_tool1:
             if selected_count == 1:
                 if st.button(i18n.t("containers.open_detail"), key="container_detail_active",
