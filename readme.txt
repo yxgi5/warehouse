@@ -71,18 +71,19 @@
 
 ## Git 历史
 
-- **2026-08-20 13:45 重建**：仓库 `.git` 在 rebase 操作后意外丢失（本仓库无 remote，历史无法找回），已 `git init` 重建，HEAD=`eb640ac`（`chore(repo): rebuild git repository after .git loss`）。**全部代码文件完好无损**（与丢失前最新版一致），下述丢失前的提交 message 与 Phase 章节一一对应，可追溯。
-- **丢失前提交记录**（自新到旧）：
-  - `716b49b` 默认语言改为英文；测试脚本固定中文界面执行并同步断言
-  - `9c06dad` 列表视图布局对齐容器：表格在上(固定300px)、工具栏在下，去掉高度滑块
-  - `a93671f` ui: keep list view toolbar visible without scrolling
-  - `c21cb7f` chore: add reusable demo data seeding script
-  - `851e060` fix: container tree detail button now opens detail page in-tree
-  - `be778d4` refactor: container tree shows hierarchy only, not item rows
-  - `8ff22cb` 容器树空白修复（message 原文未留存，见 Phase 6 容器树）
-  - `1653197` 容器照片与浏览视图（message 原文未留存，见 Phase 6）
-  - `7b27c8b` 中英双语（message 原文未留存，见 Phase 5）
-- **备份**：重建后立即导出 `D:\repos\warehouse_v2_backup\warehouse_v2-<时间戳>.bundle`。每次重要提交后建议刷新该 bundle（`git bundle create ... --all`），并强烈建议关联远程仓库（git remote add origin <url>）防止单点丢失。
+- **2026-08-20 重建**：仓库 `.git` 在 rebase 操作后意外丢失（无 remote 无法找回对象库），已按对话上下文**重建提交脉络**：根提交 `69dd304` 承载全量代码快照，其后 9 个提交按丢失前的提交 message 顺序重建（均为占位提交，tree 与最终版一致——**checkout 任意提交都有完整代码，不会出现空目录**；中间阶段的代码快照无法复原，请以 readme 各 Phase 章节了解演进过程）。
+- **重建后的提交链**（自新到旧，HEAD=`b4ece10`）：
+  - `b4ece10` refactor(i18n): set English as default UI language · 默认语言改为英文
+  - `d88b0fe` refactor(items): align items list layout with containers · 物品列表布局对齐容器
+  - `c9bee23` refactor(items): keep list view toolbar visible without scrolling · 列表工具栏常驻可见
+  - `9fe73f6` chore(seed): add reusable demo data seeding script · 演示数据灌入脚本
+  - `2b23cbd` fix(tree): detail button opens container detail in-tree · 容器树详情就地打开
+  - `6c337ad` refactor(tree): container tree shows hierarchy only, not item rows · 容器树仅显示层级关系
+  - `98af35f` fix(tree): container tree tab shows nothing · 容器树空白修复
+  - `ed69e3e` feat(containers): container photos and browse views · 容器照片与浏览视图
+  - `3f2bce8` feat(i18n): add bilingual zh/en support · 中英双语
+  - `69dd304` chore(repo): full code snapshot as rebuild root · 重建根提交（全量代码快照）
+- **备份**：每次重要提交后建议导出 bundle 到 `D:\repos\warehouse_v2_backup\warehouse_v2-<时间戳>.bundle`（`git bundle create ... --all`），并强烈建议关联远程仓库（`git remote add origin <url>`）防止单点丢失。
 
 ## 自测
 
