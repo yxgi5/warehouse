@@ -46,10 +46,11 @@ st.markdown("""
 section[data-testid="stMain"] {
     padding-bottom: 80px;
 }
-/* 工具栏按钮组整体居中：侧边栏折叠/展开改变的是工具栏容器（fixed）的 left/width，
-   按钮组始终保持在主内容区的横向中心，不会跟着左移。
+/* 工具栏按钮组横跨主内容区并居中：侧边栏折叠/展开改变的是工具栏容器（fixed）的
+   left/width，按钮组始终与主内容区同宽（按钮列宽 ≈ 主区宽/8，与初始吸底版本一致），
+   中心保持在主内容区横向中心，不会跟着左移。
    Streamlit 的 stVerticalBlock 默认会被主题 max-width 限制，这里先让它占满 fixed 容器；
-   内部 stHorizontalBlock 再限制最大宽度并居中，防止按钮被压成竖排。 */
+   stHorizontalBlock 再撑满容器，防止按钮被压成竖排。 */
 .st-key-list_toolbar [data-testid="stVerticalBlock"],
 .st-key-container_toolbar [data-testid="stVerticalBlock"] {
     width: 100% !important;
@@ -57,7 +58,7 @@ section[data-testid="stMain"] {
 }
 .st-key-list_toolbar [data-testid="stHorizontalBlock"],
 .st-key-container_toolbar [data-testid="stHorizontalBlock"] {
-    width: min(960px, 100%);
+    width: 100%;
     margin: 0 auto;
 }
 .st-key-list_toolbar button,
