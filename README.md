@@ -68,15 +68,15 @@ python -m streamlit run app.py
 
 - **工具栏在表格下方**：「物品浏览」列表视图的 查看详情/编辑/删除/导出 工具栏与容器列表布局一致，放在表格下方，常驻可见，选中行后**无需滚动即可操作**。
 - **固定高度**：表格高度固定 300px（与容器列表一致），不再提供高度滑块。
-- **交互时序**：工具栏按钮始终可点，未选中时点击给 toast 提示（不做 disabled——`st.dataframe` 的选中结果渲染后才能拿到，disabled 会导致按钮状态滞后一次交互）。工具栏在表格之后渲染，直接读取本轮选中结果，无滞后。
+- **交互时序**：工具栏按钮与选中状态联动——未选中时置灰 disabled（详情/编辑需恰好选中 1 行，删除/导出需 ≥1 行），选中后 `on_select="rerun"` 立即刷新按钮可用状态。工具栏在表格之后渲染，直接读取本轮选中结果，无滞后。
 
 ## 列表工具栏吸底与容器树美化（Phase 6.2）
 
-- **工具栏吸底**：物品/容器列表的 详情/编辑/删除/导出（新增）工具栏用 `st.container(key="list_toolbar"/"container_toolbar")` 包裹，注入 CSS `position: sticky; bottom: 0`——页面滚动时工具栏始终吸附在视口底部，不脱离文档流、不遮挡内容。
-  - **实现要点**：直接对 `.st-key-*` 元素设 sticky 会失效——Streamlit 1.40 的多层 `stVerticalBlockBorderWrapper` 使该元素的包含块仅有自身高度（~53px），sticky 无处可粘。正确做法是用 `:has()` 选中包含工具栏的 `stVerticalBlockBorderWrapper` 层（其包含块是完整主内容块）再设 sticky。已用 Chrome headless 实测：修复前滚动后工具栏 top=2005（随内容滚走），修复后 top=856/896（紧贴视口底部）。
+- **工具栏吸底**：物品/容器列表的 详情/编辑/删除/导出 工具栏用 `st.container(key="list_toolbar"/"container_toolbar")` 包裹，注入 CSS `position: fixed; bottom: 0`——工具栏**钉死在视口底部，不依赖页面滚动**，页面再短也常驻可见。
+  - **实现要点**：早期尝试 `position: sticky` 失败——Streamlit 1.40 的多层 `stVerticalBlockBorderWrapper` 使 `.st-key-*` 的包含块仅有自身高度（~53px），sticky 无处可粘；fixed 方案直接对工具栏容器定位，绕开包含块问题。left/width 由内嵌 JS 组件（不可见 iframe）实时同步主内容区 `stMain` 的位置到 CSS 变量 `--toolbar-left/--toolbar-width`，侧边栏折叠/窗口缩放自动对齐，异常时回退 `21rem`（展开侧边栏默认宽度）。已用 Chrome headless 实测：滚动后工具栏 bottom 恒定贴视口底（left=336、width=1064），表格底部留 80px 防遮挡。
   - **提示位置**：选中提示移到表格与工具栏之间，避免吸底后提示被顶出视线。
 - **容器树行内装饰**：树行改用 HTML 渲染——等宽字体字符画连接线（`├─ └─ │`）+ 🗂️/📦 图标（有子容器/叶子）+ 数量徽标（`color-mix` 取主题色）+ 📍位置 + hover 高亮；缩进用 `margin-left` 按深度递增，保留详情按钮原生交互。
-- **列表高度**：表格固定 300px（列表内部滚动）；页面滚动仅在内容超出视口时发生，此时工具栏才触发吸底（数据不足一屏时工具栏本就在底部可见，吸底不生效属正常）。
+- **列表高度**：表格固定 300px（列表内部滚动）；fixed 工具栏不依赖滚动，任何页面长度下都常驻视口底部。
 
 ## 提交规范（Git Convention）
 

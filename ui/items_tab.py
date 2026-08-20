@@ -257,42 +257,50 @@ def render_list_view(conn, df_all, total_items, container_options):
     elif selected_count > 1:
         st.success(i18n.t("items.hint_many", n=selected_count))
 
-    # --- 工具栏（sticky 吸底：页面滚动时固定在视口底部，见 app.py 全局样式）---
-    # 注意：按钮不做 disabled（否则选中后需等一次额外 rerun 按钮才可点，
-    # 因为本轮的选中结果要渲染完 dataframe 才能拿到），改为点击时校验。
+    # --- 工具栏（fixed 钉死视口底部：不依赖页面滚动，见 app.py 全局样式）---
+    # 未选中时按钮 disabled（与容器列表一致）：详情/编辑需恰好选中 1 行，
+    # 删除/导出需至少 1 行。选中后 on_select="rerun" 会立即刷新按钮状态。
     with st.container(key="list_toolbar"):
         col_tool1, col_tool2, col_tool3, col_tool4, col_tool5 = st.columns([1, 1, 1, 1, 4])
         with col_tool1:
-            if st.button(i18n.t("items.view_detail"), use_container_width=True):
-                if selected_count == 1:
+            if selected_count == 1:
+                if st.button(i18n.t("items.view_detail"), key="item_detail_active",
+                             use_container_width=True):
                     st.session_state.detail_item_id = selected_item_ids[0]
                     st.rerun()
-                else:
-                    st.toast(i18n.t("items.hint_need_one"))
+            else:
+                st.button(i18n.t("items.view_detail"), key="item_detail_disabled",
+                          disabled=True, use_container_width=True)
         with col_tool2:
-            if st.button(i18n.t("items.edit"), use_container_width=True):
-                if selected_count == 1:
+            if selected_count == 1:
+                if st.button(i18n.t("items.edit"), key="item_edit_active",
+                             use_container_width=True):
                     start_edit(conn, selected_item_ids[0], container_options)
                     st.rerun()
-                else:
-                    st.toast(i18n.t("items.hint_need_one"))
+            else:
+                st.button(i18n.t("items.edit"), key="item_edit_disabled",
+                          disabled=True, use_container_width=True)
         with col_tool3:
-            if st.button(i18n.t("items.delete"), use_container_width=True):
-                if selected_count > 0:
+            if selected_count > 0:
+                if st.button(i18n.t("items.delete"), key="item_delete_active",
+                             use_container_width=True):
                     batch_delete_dialog(conn, selected_item_ids)
-                else:
-                    st.toast(i18n.t("items.hint_need_select"))
+            else:
+                st.button(i18n.t("items.delete"), key="item_delete_disabled",
+                          disabled=True, use_container_width=True)
         with col_tool4:
-            if st.button(i18n.t("items.export_selected"), use_container_width=True):
-                if selected_count > 0:
+            if selected_count > 0:
+                if st.button(i18n.t("items.export_selected"), key="item_export_active",
+                             use_container_width=True):
                     export_df = df_all[df_all['id'].isin(selected_item_ids)]
                     csv = export_df.to_csv(index=False).encode('utf-8-sig')
                     b64 = base64.b64encode(csv).decode()
                     href = f'<a href="data:file/csv;base64,{b64}" download="export_selected.csv">{i18n.t("items.click_download")}</a>'
                     st.markdown(href, unsafe_allow_html=True)
                     st.success(i18n.t("items.export_ok"))
-                else:
-                    st.toast(i18n.t("items.hint_need_select"))
+            else:
+                st.button(i18n.t("items.export_selected"), key="item_export_disabled",
+                          disabled=True, use_container_width=True)
         with col_tool5:
             st.caption(i18n.t("items.list_count", total=total_items, n=selected_count))
 

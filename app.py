@@ -10,6 +10,7 @@
 运行:  streamlit run app.py
 """
 import streamlit as st
+import streamlit.components.v1 as components
 import db
 import repo
 import i18n
@@ -21,26 +22,59 @@ i18n.set_lang(st.session_state.get('lang', 'en'))
 # --- 页面配置（必须是第一个 st 调用） ---
 st.set_page_config(page_title=i18n.t("app.title"), layout="wide")
 
-# --- 全局样式：列表工具栏吸底（sticky 不脱离文档流、不遮挡内容） ---
+# --- 全局样式：列表工具栏固定视口底部（fixed 不依赖页面滚动） ---
 # st.container(key=...) 生成 class "st-key-<key>"（Streamlit 1.39+）。
-# 注意：直接对 .st-key-* 元素设 sticky 会失效，因为 Streamlit 用多层
-# stVerticalBlockBorderWrapper 包裹它，导致 sticky 元素的“包含块”只有
-# 自身高度（~53px），sticky 元素无处可粘。
-# 修复：对包含块 = 整个主内容块的 stVerticalBlockBorderWrapper 层应用 sticky，
-# 用 :has() 选中包含对应 key 的工具栏那层。
+# 直接对工具栏容器本身应用 position: fixed，钉在视口底部：
+# 无论页面长短、是否滚动，工具栏始终可见。left/width 用 CSS 变量
+# --toolbar-left/--toolbar-width 提供（由下方 JS 随主内容区实时同步，
+# 侧边栏折叠/窗口缩放时自动对齐）；fallback 21rem 对应展开侧边栏的默认宽度。
+# 主内容区加足够 padding-bottom 防止 fixed 工具栏遮挡底部内容。
 st.markdown("""
 <style>
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.st-key-list_toolbar),
-div[data-testid="stVerticalBlockBorderWrapper"]:has(.st-key-container_toolbar) {
-    position: sticky;
+.st-key-list_toolbar,
+.st-key-container_toolbar {
+    position: fixed;
     bottom: 0;
-    background: var(--background-color);
+    left: var(--toolbar-left, 21rem);
+    width: var(--toolbar-width, calc(100vw - 21rem));
+    background: var(--background-color, #0e1117);
     padding: 8px 0 4px;
     z-index: 1000;
     border-top: 1px solid rgba(128, 128, 128, 0.15);
+    box-sizing: border-box;
+}
+section[data-testid="stMain"] {
+    padding-bottom: 80px;
 }
 </style>
 """, unsafe_allow_html=True)
+
+# --- 工具栏定位同步（不可见 iframe）：侧边栏折叠/展开、窗口缩放时，
+# stMain 的左缘与宽度会变化，这里实时写入 CSS 变量供工具栏使用。
+# 组件 iframe 与 app 同源，可访问 parent；任何异常静默回退到 CSS fallback。---
+components.html("""
+<script>
+(function () {
+    function sync() {
+        try {
+            var doc = window.parent.document;
+            var main = doc.querySelector('section[data-testid="stMain"]');
+            if (!main) return;
+            var r = main.getBoundingClientRect();
+            doc.documentElement.style.setProperty('--toolbar-left', r.left + 'px');
+            doc.documentElement.style.setProperty('--toolbar-width', r.width + 'px');
+        } catch (e) { /* 跨源等异常时静默，保留 CSS fallback */ }
+    }
+    sync();
+    window.addEventListener('resize', sync);
+    var doc = window.parent.document;
+    var main = doc && doc.querySelector('section[data-testid="stMain"]');
+    if (main && 'MutationObserver' in window) {
+        new MutationObserver(sync).observe(main, { attributes: true, attributeFilter: ['style', 'class'] });
+    }
+})();
+</script>
+""", height=0)
 
 # --- 日志与连接（连接复用：Streamlit 每次 rerun 不重复建连） ---
 db.setup_logging()
