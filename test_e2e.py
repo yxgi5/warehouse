@@ -10,8 +10,10 @@ import os
 import sqlite3
 import sys
 
-os.chdir(r"D:/repos/warehouse_v2")
-sys.path.insert(0, r"D:/repos/warehouse_v2")
+# 仓库根目录锚定：跟随脚本自身位置（目录可改名/搬移）
+_BASE = os.path.dirname(os.path.abspath(__file__))
+os.chdir(_BASE)
+sys.path.insert(0, _BASE)
 from streamlit.testing.v1 import AppTest
 
 
