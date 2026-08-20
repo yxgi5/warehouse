@@ -22,11 +22,16 @@ i18n.set_lang(st.session_state.get('lang', 'en'))
 st.set_page_config(page_title=i18n.t("app.title"), layout="wide")
 
 # --- 全局样式：列表工具栏吸底（sticky 不脱离文档流、不遮挡内容） ---
-# 工具类 .st-key-<key> 由 st.container(key=...) 生成（Streamlit 1.39+），
-# 配合 position: sticky + bottom:0 使工具栏在页面滚动时始终固定在视口底部。
+# st.container(key=...) 生成 class "st-key-<key>"（Streamlit 1.39+）。
+# 注意：直接对 .st-key-* 元素设 sticky 会失效，因为 Streamlit 用多层
+# stVerticalBlockBorderWrapper 包裹它，导致 sticky 元素的“包含块”只有
+# 自身高度（~53px），sticky 元素无处可粘。
+# 修复：对包含块 = 整个主内容块的 stVerticalBlockBorderWrapper 层应用 sticky，
+# 用 :has() 选中包含对应 key 的工具栏那层。
 st.markdown("""
 <style>
-.st-key-list_toolbar, .st-key-container_toolbar {
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.st-key-list_toolbar),
+div[data-testid="stVerticalBlockBorderWrapper"]:has(.st-key-container_toolbar) {
     position: sticky;
     bottom: 0;
     background: var(--background-color);
