@@ -41,9 +41,9 @@ def main():
     conn = sqlite3.connect("warehouse.db")
     n = conn.execute("SELECT COUNT(*) FROM containers").fetchone()[0]
     conn.close()
-    print("默认容器数量:", n)
+    print("容器数量（无内置种子，取决于库中数据）:", n)
 
-    ok = (len(at.exception) == 0 and db_ok and len(backups) > 0 and has_backup and n >= 2)
+    ok = (len(at.exception) == 0 and db_ok and len(backups) > 0 and has_backup)
     print("RESULT:", "PASS" if ok else "FAIL")
     sys.exit(0 if ok else 1)
 

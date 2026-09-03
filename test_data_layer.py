@@ -50,14 +50,17 @@ def main():
     conn = db.get_conn()
     db.init_db(conn)
 
-    # ---------- 建表与种子 ----------
+    # ---------- 建表与初始化 ----------
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     check("建表齐全", {"tags", "item_tags", "containers", "items", "images", "container_images"} <= tables, str(tables))
     check("外键已开启", conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1)
-    check("默认种子容器=2", conn.execute("SELECT COUNT(*) FROM containers").fetchone()[0] == 2)
+    check("初始化后无内置容器（种子已移除）", conn.execute("SELECT COUNT(*) FROM containers").fetchone()[0] == 0)
 
     # ---------- 物品 CRUD ----------
-    cid = conn.execute("SELECT id FROM containers LIMIT 1").fetchone()[0]
+    # 种子容器已移除：自建容器供后续用例使用（容器名同时用于「全字段搜索命中容器名」用例）
+    repo.add_container(conn, "测试容器甲", None, "测试位")
+    TEST_CNAME = "测试容器甲"
+    cid = conn.execute("SELECT id FROM containers WHERE name=?", (TEST_CNAME,)).fetchone()[0]
     i1 = repo.add_item(conn, "ITEM_20260820_001", "苹果手机", cid, "2026-01-01",
                        "淘宝", "ORD1", 4999.0, "红色", "", "苹果,数码,手机",
                        [fake_upload("a.jpg"), fake_upload("b.jpg")])
@@ -95,7 +98,7 @@ def main():
     check("全字段搜索命中平台", set(df7['item_no']) == {"ITEM_20260820_001"}, str(set(df7['item_no'])))
     df8 = repo.get_filtered_data(conn, "数码", "")    # 标签名（子查询）
     check("全字段搜索命中标签", set(df8['item_no']) == {"ITEM_20260820_001"}, str(set(df8['item_no'])))
-    df9 = repo.get_filtered_data(conn, "Box_A01", "")    # 容器名（左连接列）
+    df9 = repo.get_filtered_data(conn, TEST_CNAME, "")    # 容器名（左连接列）
     check("全字段搜索命中容器名", set(df9['item_no']) == {"ITEM_20260820_001", "ITEM_20260820_002", "ITEM_20260820_003"},
           str(set(df9['item_no'])))
     df10 = repo.get_filtered_data(conn, "不存在的词", "")

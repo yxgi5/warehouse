@@ -366,9 +366,10 @@ IMPORT_COLUMNS = ['item_no', 'name', 'container', 'purchase_date', 'platform', '
 
 
 def import_template_csv():
-    """生成带示例行的模板 CSV 文本（UTF-8 带 BOM，Excel 可直接打开）。"""
+    """生成带示例行的模板 CSV 文本（UTF-8 带 BOM，Excel 可直接打开）。
+    示例行不指定容器——填自己已建的容器名即可，不存在的容器名会被逐行报错。"""
     rows = [",".join(IMPORT_COLUMNS),
-            ",示例物品,Box_A01,2026-08-20,京东,JD123456,99.9,全新,备注,数码;充电器"]
+            ",示例物品,,2026-08-20,京东,JD123456,99.9,全新,备注,数码;充电器"]
     return "\n".join(rows) + "\n"
 
 

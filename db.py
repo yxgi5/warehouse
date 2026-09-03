@@ -50,7 +50,7 @@ def get_conn():
 
 # --- 初始化数据库 ---
 def init_db(conn=None):
-    """建表 + 迁移 + 默认容器种子。可传入已有连接（推荐），否则自建。"""
+    """建表 + 迁移（幂等）。可传入已有连接（推荐），否则自建。"""
     own = conn is None
     conn = conn or get_conn()
     try:
@@ -80,10 +80,8 @@ def init_db(conn=None):
                 REFERENCES containers(id) ON DELETE CASCADE,
             file_path TEXT, sort_order INTEGER)''')
         migrate_tags(conn)     # 旧版 items.tags 逗号字符串一次性拆入关联表
-        c.execute("SELECT COUNT(*) FROM containers")
-        if c.fetchone()[0] == 0:
-            c.execute("INSERT INTO containers (name, location) VALUES ('Box_A01', '书架顶层')")
-            c.execute("INSERT INTO containers (name, location) VALUES ('Box_B02', '床底收纳箱')")
+        # 不内置种子容器：曾按「容器表为空」补插 Box_A01/Box_B02，用户删光容器后
+        # 每次启动/rerun 都会复活，干扰真实录入。演示数据统一走 seed_demo_data.py。
         conn.commit()
         return conn
     finally:
