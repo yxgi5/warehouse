@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Tab6 新增物品：录入表单（手动编号 + 标签 + 多图）+ CSV 批量导入。"""
+"""Tab6 新增物品：录入表单（编号/容器/日期均无预填 + 标签 + 多图）+ CSV 批量导入。"""
 import pandas as pd
 import streamlit as st
 import db
@@ -12,11 +12,17 @@ def render(conn, container_options):
         st.subheader(i18n.t("add.title"))
         col1, col2 = st.columns(2)
         with col1:
-            # 编号由用户自行输入，不再预填自动编号（真实使用中多为自有编号如 A0330）；
-            # 自动编号 next_item_no 保留给 CSV 导入等场景。容器与购买日期不在添加表单
-            # 出现：新物品默认"未归档/无日期"，需要时在详情页点"编辑"补充。
+            # 编号由用户自行输入，不预填自动编号（真实使用中多为自有编号如 A0330）；
+            # 自动编号 next_item_no 保留给 CSV 导入等场景。容器与购买日期可填但默认
+            # 不给内容：容器下拉首项占位=不选（保存为未归档），日期默认无（不默认今天）。
             item_no = st.text_input(i18n.t("add.item_no"), key="draft_item_no")
             name = st.text_input(i18n.t("form.name"))
+            cont_opts = [i18n.t("add.select_container")] + list(container_options.keys())
+            container_name = st.selectbox(i18n.t("form.container"), cont_opts)
+            # date_input 无法原生留空（不给 value 也默认今天）：默认勾选"无购买日期"
+            # = 不填；取消勾选后日期可选
+            no_date = st.checkbox(i18n.t("common.no_date"), value=True)
+            purchase_date = st.date_input(i18n.t("form.purchase_date"), disabled=no_date)
         with col2:
             platform = st.text_input(i18n.t("form.platform"))
             order_no = st.text_input(i18n.t("form.order_no"))
@@ -36,7 +42,9 @@ def render(conn, container_options):
                 st.error(i18n.t("add.item_no_exists", item_no=item_no))
             else:
                 try:
-                    item_id = repo.add_item(conn, item_no, name, None, "",
+                    item_id = repo.add_item(conn, item_no, name,
+                                            container_options.get(container_name),  # 占位未选 → 未归档
+                                            purchase_date.strftime('%Y-%m-%d') if (purchase_date and not no_date) else '',
                                             platform, order_no, price, features, description,
                                             tags, uploaded_files, repo.parse_related_text(related_items))
                     # 保存成功：跳到物品 Tab 并直接打开新物品详情，用户立刻看到录入结果

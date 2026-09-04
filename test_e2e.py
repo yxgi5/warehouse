@@ -11,6 +11,7 @@ import base64
 import sqlite3
 import sys
 import types
+from datetime import date
 
 # 仓库根目录锚定：跟随脚本自身位置（目录可改名/搬移）
 _BASE = os.path.dirname(os.path.abspath(__file__))
@@ -41,10 +42,25 @@ def main():
     print("✅ 初始渲染 0 异常（中文界面）")
 
     # ---- 1. 新增物品表单填表提交（每个控件仅 set 一次） ----
+    conn = sqlite3.connect("warehouse.db")
+    conn.execute("PRAGMA foreign_keys=ON")
+    # 编号/容器/购买日期三个字段都在，但默认不给内容：编号空、容器=占位未选、
+    # 日期靠默认勾选"无购买日期"留空（date_input 原生无空态）
+    assert str(at.text_input(key="draft_item_no").value) == "", "编号不应预填"
+    assert len(at.tabs[5].selectbox) == 1, "添加表单应有容器选择下拉"
+    assert "(请选择容器)" in str(at.tabs[5].selectbox[0].value), "容器默认应为占位(未预选)"
+    assert at.tabs[5].checkbox[0].value is True, "无购买日期应默认勾选(不预填日期)"
+    print("✅ 添加表单字段齐全且默认无内容（编号/容器/日期不预填）")
+
     at.text_input(key="draft_item_no").set_value("E2E_ITEM_001")
     at.text_input[1].set_value("E2E测试物品")       # name（tab6 表单第二个 text_input）
     at.text_input[4].set_value("端到端,回归")       # tags
     at.number_input[0].set_value(123.45)            # price
+    # 容器/日期“可以填”：取消无日期勾选、各选一个真实值
+    e2e_cont_name = conn.execute("SELECT name FROM containers ORDER BY id LIMIT 1").fetchone()[0]
+    at.tabs[5].selectbox[0].set_value(e2e_cont_name)
+    at.tabs[5].checkbox[0].set_value(False)
+    at.tabs[5].date_input[0].set_value(date(2024, 1, 15))
     btn = find_button(at, label_contains="保存物品")
     assert btn is not None, "找不到保存按钮"
     btn.click()
@@ -54,20 +70,19 @@ def main():
     # draft_item_no 导致 Save failed，但物品已落库，误导用户）
     assert len(at.error) == 0, [str(getattr(e, "value", "")) for e in at.error]
 
-    conn = sqlite3.connect("warehouse.db")
-    conn.execute("PRAGMA foreign_keys=ON")
     row = conn.execute("SELECT id, name FROM items WHERE item_no='E2E_ITEM_001'").fetchone()
     assert row, "物品未落库"
     item_id = row[0]
     # 保存成功应打开新物品详情（detail_item_id 指向新物品；AppTest 不执行切 Tab 的 JS）
     assert at.session_state["detail_item_id"] == item_id, at.session_state["detail_item_id"]
     print("✅ 保存成功自动打开新物品详情")
-    # 添加表单不再收集容器/购买日期：新物品默认未归档、无日期
+    # 所填容器与日期按选择落库
+    e2e_cont_id = conn.execute("SELECT id FROM containers WHERE name=?",
+                               (e2e_cont_name,)).fetchone()[0]
     meta = conn.execute("SELECT container_id, purchase_date FROM items WHERE id=?",
                         (item_id,)).fetchone()
-    assert meta == (None, ""), f"新增默认未归档/无日期: {meta}"
-    assert len(at.tabs[5].selectbox) == 0, "添加表单不应再出现容器选择"
-    print("✅ 新增默认未归档/无日期（添加表单已移除容器与日期）")
+    assert meta == (e2e_cont_id, "2024-01-15"), f"所选容器/日期应落库: {meta}"
+    print("✅ 新增落库：所填容器与日期生效")
     # 复位详情状态回到列表视图，供后续标签筛选/搜索的表格断言
     at.session_state["detail_item_id"] = None
     at.run()
@@ -109,9 +124,9 @@ def main():
     # 详情是浏览态延伸：此时点其它 Tab 必须正常渲染（子页面不得 st.stop() 截断脚本）
     assert len(at.tabs[5].text_input) > 0, "详情页下 Add 页空白（st.stop 截断了脚本）"
     assert len(at.tabs[6].radio) >= 1, "详情页下 Containers 页空白（st.stop 截断了脚本）"
-    assert any("未归档" in str(getattr(m, "value", "")) for m in at.tabs[0].markdown), \
-        "详情页容器行应显示未归档"
-    print("✅ 详情页渲染 0 异常，其它 Tab 正常，容器行显示未归档")
+    assert any(e2e_cont_name in str(getattr(m, "value", "")) for m in at.tabs[0].markdown), \
+        "详情页容器行应显示所选容器"
+    print("✅ 详情页渲染 0 异常，其它 Tab 正常，容器行显示所选容器")
 
     # ---- 3b. 造两件共用同一张图（同字节内容）的物品：UI 无法上传文件，走 repo 层 ----
     cid2 = conn.execute("SELECT container_id FROM items WHERE id=?", (item_id,)).fetchone()[0]
@@ -158,11 +173,11 @@ def main():
                   (min(item_id, peer_b), max(item_id, peer_b))}
     assert got_pairs == want_pairs, got_pairs
     print("✅ 编辑保存关联编号 → item_links 落库（无向单行 a<b）")
-    # 编辑页未归档/无日期为合法状态：保存后仍应保持 None/空（编辑不得悄悄挪进第一容器/填今天）
+    # 编辑保存不丢失已填容器/日期（也不得悄悄改掉）
     meta2 = conn.execute("SELECT container_id, purchase_date FROM items WHERE id=?",
                          (item_id,)).fetchone()
-    assert meta2 == (None, ""), f"编辑保存后仍应未归档/无日期: {meta2}"
-    print("✅ 编辑保存保持未归档/无日期")
+    assert meta2 == (e2e_cont_id, "2024-01-15"), f"编辑保存后容器/日期应保持: {meta2}"
+    print("✅ 编辑保存保持容器与日期")
 
     # ---- 4c. 详情页关联区与图下共用提示的跳转闭环 ----
     # E2E_ITEM_001（无图）详情：关联区列出两件，点按钮切到对方详情

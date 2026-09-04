@@ -97,7 +97,7 @@ def render_edit_mode(conn, item_data, container_options):
             cont_opts = [i18n.t("items.unfiled")] + list(container_options.keys())
             container_name = st.selectbox(i18n.t("form.container"), cont_opts,
                                           key="edit_container_name")
-            no_date = st.checkbox(i18n.t("items.edit_no_date"), key="edit_no_date")
+            no_date = st.checkbox(i18n.t("common.no_date"), key="edit_no_date")
             purchase_date = st.date_input(i18n.t("form.purchase_date"), key="edit_purchase_date",
                                           disabled=no_date)
         with col2:
