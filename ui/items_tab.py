@@ -406,17 +406,18 @@ def render_card_view(conn, df_all, total_items):
 # ==================== Tab 入口 ====================
 
 def render(conn, search, tag_filter, container_options):
-    # 详情/编辑是子页面：优先渲染并 stop，避免浏览态控件（视图切换 radio、
-    # 列表/卡片）出现在详情/编辑页顶部
+    # 详情/编辑是子页面：优先渲染并 return，避免浏览态控件（视图切换 radio、
+    # 列表/卡片）出现在详情/编辑页顶部。注意不能 st.stop()——那会中断整个
+    # 脚本，st.tabs 全量渲染，其后所有 tab 内容都会变空。
     if st.session_state.detail_item_id is not None:
         item = repo.load_item_by_id(conn, st.session_state.detail_item_id)
         if item is None:
             st.error(i18n.t("items.not_found"))
             st.session_state.detail_item_id = None
             st.rerun()
-            st.stop()
+            return
         render_detail_page(conn, item, container_options)
-        st.stop()
+        return
 
     if st.session_state.edit_item_id is not None:
         item_data = repo.load_item_by_id(conn, st.session_state.edit_item_id)
@@ -424,9 +425,9 @@ def render(conn, search, tag_filter, container_options):
             st.warning(i18n.t("items.edit_not_found"))
             st.session_state.edit_item_id = None
             st.rerun()
-            st.stop()
+            return
         render_edit_mode(conn, item_data, container_options)
-        st.stop()
+        return
 
     # --- 浏览态：子视图切换（内部值用稳定 list/card，显示文本按语言翻译）---
     mode_labels = [i18n.t("items.view_list"), i18n.t("items.view_card")]

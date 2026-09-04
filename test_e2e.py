@@ -100,7 +100,10 @@ def main():
     at.run()
     assert len(at.exception) == 0, at.exception
     assert len(at.tabs[0].radio) == 0, "详情页不应出现列表/卡片切换 radio"
-    print("✅ 详情页渲染 0 异常")
+    # 详情是浏览态延伸：此时点其它 Tab 必须正常渲染（子页面不得 st.stop() 截断脚本）
+    assert len(at.tabs[5].text_input) > 0, "详情页下 Add 页空白（st.stop 截断了脚本）"
+    assert len(at.tabs[6].radio) >= 1, "详情页下 Containers 页空白（st.stop 截断了脚本）"
+    print("✅ 详情页渲染 0 异常，其它 Tab 同轮正常渲染")
 
     # ---- 3b. 造两件共用同一张图（同字节内容）的物品：UI 无法上传文件，走 repo 层 ----
     cid2 = conn.execute("SELECT container_id FROM items WHERE id=?", (item_id,)).fetchone()[0]
@@ -128,7 +131,9 @@ def main():
     edit_texts = [str(getattr(t, "value", "")) for t in at.text_input]
     assert any("E2E_ITEM_001" in v for v in edit_texts), "编辑表单未带出编号"
     assert len(at.tabs[0].radio) == 0, "编辑页不应出现列表/卡片切换 radio"
-    print("✅ 编辑页渲染 0 异常，编号已带出")
+    assert len(at.tabs[5].text_input) > 0, "编辑页下 Add 页空白（st.stop 截断了脚本）"
+    assert len(at.tabs[6].radio) >= 1, "编辑页下 Containers 页空白（st.stop 截断了脚本）"
+    print("✅ 编辑页渲染 0 异常，编号已带出，其它 Tab 同轮正常渲染")
 
     # ---- 4b. 编辑表单录入“关联物品编号”（整体校验通过）→ 提交落库 item_links ----
     at.text_input(key="edit_related_items").set_value("E2E_IMG_A, E2E_IMG_B")

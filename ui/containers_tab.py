@@ -47,7 +47,7 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
             st.warning(i18n.t("containers.not_found"))
             st.session_state.edit_container_id = None
             st.rerun()
-            st.stop()
+            return
         _, current_name, current_parent_id, current_location = cont_data
         title = i18n.t("containers.edit_title", name=current_name)
     else:
@@ -153,7 +153,7 @@ def render_detail_readonly(conn, containers_df, cid, exit_key, key_prefix="cd"):
         st.warning(i18n.t("containers.not_found"))
         st.session_state[exit_key] = None
         st.rerun()
-        st.stop()
+        return
     cont = row.iloc[0]
     name, parent_id, location = cont['name'], cont['parent_id'], cont['location'] or ''
 
@@ -214,7 +214,7 @@ def render_detail_page(conn, containers_df, cid):
         st.warning(i18n.t("containers.not_found"))
         st.session_state.container_detail_id = None
         st.rerun()
-        st.stop()
+        return
     cont = row.iloc[0]
     name, parent_id, location = cont['name'], cont['parent_id'], cont['location'] or ''
 
@@ -457,18 +457,20 @@ def render(conn):
     containers_df = repo.list_containers(conn)
 
     # ========== 编辑或新增模式（优先） ==========
+    # 子页面用 return 退出本函数即可，不能用 st.stop()——st.tabs 全量渲染，
+    # stop 会中断整个脚本，使本 Tab 之后的其它 Tab 内容变空。
     if st.session_state.edit_container_id is not None or st.session_state.add_container_mode:
         if st.session_state.edit_container_id is not None:
             render_edit_form(conn, containers_df, is_edit=True,
                              cont_id=st.session_state.edit_container_id)
         else:
             render_edit_form(conn, containers_df, is_edit=False)
-        st.stop()  # 编辑/新增模式下不显示浏览视图
+        return  # 编辑/新增模式下不显示浏览视图
 
     # ========== 详情模式 ==========
     if st.session_state.container_detail_id is not None:
         render_detail_page(conn, containers_df, st.session_state.container_detail_id)
-        st.stop()
+        return
 
     # ========== 浏览模式：表格/卡片切换 ==========
     mode_labels = [i18n.t("containers.view_table"), i18n.t("containers.view_card")]
