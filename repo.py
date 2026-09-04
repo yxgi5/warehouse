@@ -53,10 +53,16 @@ def add_item(conn, item_no, name, container_id, purchase_date, platform, order_n
     item_id = c.lastrowid
     set_item_tags(conn, item_id, tags)
     if uploaded_files:
-        for i, f in enumerate(uploaded_files):
-            path = db.save_uploaded_file(f, item_no)
-            c.execute("INSERT INTO images (item_id, file_path, sort_order) VALUES (?, ?, ?)",
-                      (item_id, path, i))
+        # 去重是双层的：save_shared_image 按内容只落一份文件；同一物品内同内容
+        # 也只关联一次（item_images 主键 (item_id, image_id)，重复关联会冲突）
+        seen = set()
+        for f in uploaded_files:
+            image_id = db.save_shared_image(conn, f, item_no)
+            if image_id in seen:
+                continue   # 本次上传中的重复内容 → 跳过，避免主键冲突
+            seen.add(image_id)
+            c.execute("INSERT INTO item_images (item_id, image_id, sort_order) VALUES (?, ?, ?)",
+                      (item_id, image_id, len(seen) - 1))
     conn.commit()
     return item_id
 
@@ -72,27 +78,36 @@ def update_item(conn, item_id, item_no, name, container_id, purchase_date, platf
                price, features, description, item_id))
     set_item_tags(conn, item_id, tags)
     if uploaded_files:
-        c.execute("SELECT COALESCE(MAX(sort_order), -1) FROM images WHERE item_id=?", (item_id,))
-        max_order = c.fetchone()[0]
-        for i, f in enumerate(uploaded_files):
-            path = db.save_uploaded_file(f, item_no)
-            c.execute("INSERT INTO images (item_id, file_path, sort_order) VALUES (?, ?, ?)",
-                      (item_id, path, max_order + 1 + i))
+        # 追加去重：物品已有的与本轮重复的内容一律跳过（同内容在物品内只关联一次）
+        seen = {r[0] for r in c.execute("SELECT image_id FROM item_images WHERE item_id=?",
+                                        (item_id,))}
+        order = c.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM item_images WHERE item_id=?",
+                          (item_id,)).fetchone()[0]
+        for f in uploaded_files:
+            image_id = db.save_shared_image(conn, f, item_no)   # 内容去重：同图被多物品共用只落一份
+            if image_id in seen:
+                continue
+            seen.add(image_id)
+            c.execute("INSERT INTO item_images (item_id, image_id, sort_order) VALUES (?, ?, ?)",
+                      (item_id, image_id, order))
+            order += 1
     conn.commit()
 
 
 def delete_item(conn, item_id):
-    """删除物品：先删图片文件（兼容三种路径存法），再删记录（images 记录由外键级联清理）。
-    这是唯一的物品删除入口。"""
+    """删除物品：先解关联其全部图片（图片可多物品共用，引用归零才删文件与池记录），
+    最后删物品记录。这是唯一的物品删除入口。"""
     c = conn.cursor()
-    c.execute("SELECT file_path FROM images WHERE item_id=?", (item_id,))
-    for (path,) in c.fetchall():
-        ap = db.img_abs_path(path)
-        if ap and os.path.exists(ap):
-            try:
-                os.remove(ap)
-            except OSError:
-                pass   # 文件删不掉不阻塞记录删除
+    rows = c.execute('''SELECT ii.image_id, im.file_path FROM item_images ii
+                        JOIN images im ON im.id = ii.image_id
+                        WHERE ii.item_id=?''', (item_id,)).fetchall()
+    c.execute("DELETE FROM item_images WHERE item_id=?", (item_id,))
+    for image_id, path in rows:
+        refs = c.execute("SELECT COUNT(*) FROM item_images WHERE image_id=?",
+                         (image_id,)).fetchone()[0]
+        if refs == 0:
+            _remove_photo_file(path)
+            c.execute("DELETE FROM images WHERE id=?", (image_id,))
     c.execute("DELETE FROM items WHERE id=?", (item_id,))
     conn.commit()
 
@@ -127,20 +142,26 @@ def get_filtered_data(conn, search, tag_filter):
     return pd.read_sql_query(query, conn, params=params)
 
 
-# ==================== 图片 ====================
+# ==================== 图片（图片池 + item_images 关联） ====================
+# 图片存于 images 池，物品↔图片多对多（item_images）：同一内容（sha256）只落一份
+# 文件、可被多个物品共用；物理文件仅在无任何物品引用时删除（见 _remove_photo_file）。
+# 图片在某物品内的顺序记录在关联行 sort_order，各物品互不影响。
 
 def load_images_by_item(conn, item_id):
-    """返回绝对路径列表，用于展示"""
+    """返回物品图片绝对路径列表（按顺序），用于展示。"""
     c = conn.cursor()
-    c.execute("SELECT file_path FROM images WHERE item_id=? ORDER BY sort_order", (item_id,))
+    c.execute('''SELECT im.file_path FROM item_images ii
+                 JOIN images im ON im.id = ii.image_id
+                 WHERE ii.item_id=? ORDER BY ii.sort_order''', (item_id,))
     return [db.img_abs_path(r[0]) for r in c.fetchall()]
 
 
 def load_images_full(conn, item_id):
-    """返回 [(img_id, 绝对路径, sort_order)]，用于编辑页管理"""
+    """返回 [(image_id, 绝对路径, sort_order)]，用于编辑页图片管理。"""
     c = conn.cursor()
-    c.execute("SELECT id, file_path, sort_order FROM images WHERE item_id=? ORDER BY sort_order",
-              (item_id,))
+    c.execute('''SELECT im.id, im.file_path, ii.sort_order FROM item_images ii
+                 JOIN images im ON im.id = ii.image_id
+                 WHERE ii.item_id=? ORDER BY ii.sort_order''', (item_id,))
     return [(r[0], db.img_abs_path(r[1]), r[2]) for r in c.fetchall()]
 
 
@@ -150,10 +171,11 @@ def load_first_image_map(conn, item_ids):
         return {}
     marks = ",".join("?" * len(item_ids))
     rows = conn.execute(
-        f'''SELECT i.item_id, i.file_path FROM images i
-            JOIN (SELECT item_id, MIN(sort_order) AS so FROM images GROUP BY item_id) m
-              ON i.item_id = m.item_id AND i.sort_order = m.so
-            WHERE i.item_id IN ({marks})''', list(item_ids)).fetchall()
+        f'''SELECT ii.item_id, im.file_path FROM item_images ii
+            JOIN images im ON im.id = ii.image_id
+            JOIN (SELECT item_id, MIN(sort_order) AS so FROM item_images GROUP BY item_id) m
+              ON ii.item_id = m.item_id AND ii.sort_order = m.so
+            WHERE ii.item_id IN ({marks})''', list(item_ids)).fetchall()
     return {iid: db.img_abs_path(p) for iid, p in rows}
 
 
@@ -169,14 +191,66 @@ def set_item_tags(conn, item_id, tags_str):
     c.execute("DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM item_tags)")
 
 
-def move_image(conn, img_id, direction):
-    """上移/下移物品图片：与相邻图片交换 sort_order。"""
-    return _move_owner_image(conn, "images", "item_id", img_id, direction)
+def move_image(conn, item_id, img_id, direction):
+    """上移/下移某物品的一张图片：与该物品相邻顺序的图片交换 sort_order。
+    图片可被多物品共用，这里只动本物品的关联顺序。"""
+    c = conn.cursor()
+    row = c.execute("SELECT sort_order FROM item_images WHERE item_id=? AND image_id=?",
+                    (item_id, img_id)).fetchone()
+    if not row:
+        return False
+    order = row[0]
+    peer_order = order - 1 if direction == "up" else order + 1
+    peer = c.execute("SELECT image_id FROM item_images WHERE item_id=? AND sort_order=?",
+                     (item_id, peer_order)).fetchone()
+    if not peer:
+        return False
+    c.execute("UPDATE item_images SET sort_order=? WHERE item_id=? AND image_id=?",
+              (peer_order, item_id, img_id))
+    c.execute("UPDATE item_images SET sort_order=? WHERE item_id=? AND image_id=?",
+              (order, item_id, peer[0]))
+    conn.commit()
+    return True
+
+
+def delete_image(conn, item_id, img_id):
+    """把一张图从该物品移除（仅解关联，不影响其他物品对它的引用）；
+    若图片已无任何物品引用，删除物理文件与池记录。随后重排该物品剩余图片顺序。"""
+    c = conn.cursor()
+    row = c.execute('''SELECT im.file_path FROM item_images ii
+                       JOIN images im ON im.id = ii.image_id
+                       WHERE ii.item_id=? AND ii.image_id=?''',
+                    (item_id, img_id)).fetchone()
+    if not row:
+        return False
+    c.execute("DELETE FROM item_images WHERE item_id=? AND image_id=?", (item_id, img_id))
+    refs = c.execute("SELECT COUNT(*) FROM item_images WHERE image_id=?",
+                     (img_id,)).fetchone()[0]
+    if refs == 0:
+        _remove_photo_file(row[0])
+        c.execute("DELETE FROM images WHERE id=?", (img_id,))
+    for new_order, (iid,) in enumerate(c.execute(
+            "SELECT image_id FROM item_images WHERE item_id=? ORDER BY sort_order",
+            (item_id,)).fetchall()):
+        c.execute("UPDATE item_images SET sort_order=? WHERE item_id=? AND image_id=?",
+                  (new_order, item_id, iid))
+    conn.commit()
+    return True
+
+
+def _remove_photo_file(path):
+    """尽力删除图片物理文件（兼容三种路径存法），失败不阻塞记录删除。"""
+    ap = db.img_abs_path(path)
+    if ap and os.path.exists(ap):
+        try:
+            os.remove(ap)
+        except OSError:
+            pass   # 文件删不掉不阻塞记录删除
 
 
 def _move_owner_image(conn, table, owner_col, img_id, direction):
-    """通用图片排序：table 仅取 'images'/'container_images'，owner_col 仅取 'item_id'/'container_id'
-    （内部白名单调用，无 SQL 注入风险）。"""
+    """通用图片排序（容器照片专用）：table 仅取 'container_images'，owner_col 仅取
+    'container_id'（内部白名单调用，无 SQL 注入风险）。"""
     c = conn.cursor()
     c.execute(f"SELECT {owner_col}, sort_order FROM {table} WHERE id=?", (img_id,))
     row = c.fetchone()
@@ -195,13 +269,8 @@ def _move_owner_image(conn, table, owner_col, img_id, direction):
     return True
 
 
-def delete_image(conn, img_id):
-    """删除单张物品图片：先删文件，再删记录，最后重排 sort_order 连续化。"""
-    return _delete_owner_image(conn, "images", "item_id", img_id)
-
-
 def _delete_owner_image(conn, table, owner_col, img_id):
-    """通用图片删除（table/owner_col 白名单同上）。"""
+    """通用图片删除（容器照片专用，白名单同上）：先删文件，再删记录，重排连续化。"""
     c = conn.cursor()
     c.execute(f"SELECT {owner_col}, file_path FROM {table} WHERE id=?", (img_id,))
     row = c.fetchone()

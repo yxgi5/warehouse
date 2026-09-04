@@ -9,6 +9,7 @@
 import os
 import re
 import sqlite3
+import hashlib
 import uuid
 import zipfile
 import logging
@@ -63,11 +64,8 @@ def init_db(conn=None):
                 REFERENCES containers(id) ON DELETE RESTRICT,
             purchase_date TEXT, platform TEXT, order_no TEXT, price REAL,
             features TEXT, description TEXT, tags TEXT)''')
-        c.execute('''CREATE TABLE IF NOT EXISTS images (
-            id INTEGER PRIMARY KEY, item_id INTEGER
-                REFERENCES items(id) ON DELETE CASCADE,
-            file_path TEXT, sort_order INTEGER)''')
         migrate_schema(conn)   # 旧版无外键的表结构升级（必须先于新表创建）
+        migrate_images_shared(conn)   # images 升级为图片池+item_images（多物品共用，幂等）
         c.execute('''CREATE TABLE IF NOT EXISTS tags (
             id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL)''')
         c.execute('''CREATE TABLE IF NOT EXISTS item_tags (
@@ -146,6 +144,52 @@ def migrate_schema(conn):
         conn.execute("PRAGMA foreign_keys=ON")
 
 
+# images 升级为「图片池 + item_images 关联表」（多物品可共用一张图）：
+# 旧结构 images(item_id→items) 一图只属一物品；新结构图片本身入池（一份文件=一条记录，
+# 内容 sha256 去重），物品↔图片多对多，图片在物品内的顺序存于关联行、互不影响。
+# 幂等：item_images 已存在则跳过；历史库原地升级，保留全部 id 与数据，无需重新录入。
+_IMAGES_POOL_DDL = '''CREATE TABLE images (
+    id INTEGER PRIMARY KEY, file_path TEXT, sha256 TEXT)'''
+_ITEM_IMAGES_DDL = '''CREATE TABLE item_images (
+    item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+    sort_order INTEGER,
+    PRIMARY KEY (item_id, image_id))'''
+
+
+def migrate_images_shared(conn):
+    if conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='item_images'"
+                    ).fetchone()[0]:
+        return
+    c = conn.cursor()
+    cols = {r[1] for r in c.execute("PRAGMA table_info(images)")}
+    if not cols:
+        # 全新库：直接建图片池 + 关联表
+        c.execute(_IMAGES_POOL_DDL)
+        c.execute(_ITEM_IMAGES_DDL)
+    elif 'item_id' in cols:
+        # 旧 1:N 结构：原地重建为池表，原归属 1:1 搬入关联表（无主图片留在池中）
+        conn.execute("PRAGMA foreign_keys=OFF")
+        try:
+            c.execute("ALTER TABLE images RENAME TO images_legacy")
+            c.execute(_IMAGES_POOL_DDL)
+            c.execute(_ITEM_IMAGES_DDL)
+            c.execute("INSERT INTO images (id, file_path) SELECT id, file_path FROM images_legacy")
+            c.execute('''INSERT INTO item_images (item_id, image_id, sort_order)
+                         SELECT item_id, id, sort_order FROM images_legacy
+                         WHERE item_id IS NOT NULL''')
+            c.execute("DROP TABLE images_legacy")
+            conn.commit()
+        finally:
+            conn.execute("PRAGMA foreign_keys=ON")
+    else:
+        # images 已是池结构（无 item_id 列，历史中断遗留）→ 仅补关联表
+        c.execute(_ITEM_IMAGES_DDL)
+    # 部分唯一索引：仅为新上传（sha256 非空）去重，历史行 NULL 不受影响
+    c.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_images_sha256 ON images(sha256) WHERE sha256 IS NOT NULL")
+    conn.commit()
+
+
 # 生成当日递增编号 ITEM_YYYYMMDD_###，查库取当日最大序号+1，杜绝撞 UNIQUE
 def next_item_no(conn):
     today = date.today().strftime('%Y%m%d')
@@ -211,14 +255,18 @@ def img_abs_path(path):
     return os.path.join(PHOTOS_DIR, p)
 
 
-# 扫描图片表（物品 + 容器），找出文件已不存在的孤儿记录。
-# 返回 [(img_id, owner_label, path, table)]——owner_label 用于提示（物品 id / 容器 id），
+# 扫描图片表（物品图片池 + 容器），找出文件已不存在的孤儿记录。
+# 返回 [(img_id, owner_label, path, table)]——owner_label 用于提示（物品 id / pool / 容器 id），
 # table 供清理时选择 'images' / 'container_images' 删除。
 def find_orphan_images(conn):
     orphans = []
-    for img_id, item_id, path in conn.execute("SELECT id, item_id, file_path FROM images"):
+    # 图片池：owner_label 取任一引用物品，未关联的标 pool（仅供提示/日志）
+    for img_id, path in conn.execute("SELECT id, file_path FROM images"):
         if not os.path.exists(img_abs_path(path)):
-            orphans.append((img_id, f"item:{item_id}", path, "images"))
+            owner = conn.execute("SELECT item_id FROM item_images WHERE image_id=? LIMIT 1",
+                                 (img_id,)).fetchone()
+            label = f"item:{owner[0]}" if owner else "pool"
+            orphans.append((img_id, label, path, "images"))
     for img_id, cid, path in conn.execute(
             "SELECT id, container_id, file_path FROM container_images"):
         if not os.path.exists(img_abs_path(path)):
@@ -265,6 +313,36 @@ def _save_image(uploaded_file, prefix):
 def save_uploaded_file(uploaded_file, item_no):
     """把上传文件写入 photos/，返回纯文件名（物品图，前缀用 item_no）。"""
     return _save_image(uploaded_file, item_no)
+
+
+def save_shared_image(conn, uploaded_file, prefix):
+    """物品图片落盘（图片池去重版）：按内容 sha256 查重，已存在则复用原 image_id、
+    不重复落盘；否则校验并写入 photos/ 后插入图片池。返回 image_id。
+    不合法文件抛 ValueError；并发同内容由 INSERT OR IGNORE + 部分唯一索引兜底。"""
+    name = getattr(uploaded_file, 'name', '') or ''
+    if '.' not in name:
+        raise ValueError("文件名缺少扩展名，无法识别图片类型")
+    ext = name.rsplit('.', 1)[-1].lower()
+    if ext not in ALLOWED_IMAGE_EXTS:
+        raise ValueError(f"不支持的图片类型 .{ext}（支持: {'/'.join(ALLOWED_IMAGE_EXTS)}）")
+    data = bytes(uploaded_file.getbuffer()) if hasattr(uploaded_file, 'getbuffer') else bytes(uploaded_file.read())
+    _validate_image_bytes(data, ext)
+    digest = hashlib.sha256(data).hexdigest()
+    row = conn.execute("SELECT id FROM images WHERE sha256=?", (digest,)).fetchone()
+    if row:
+        return row[0]
+    os.makedirs(PHOTOS_DIR, exist_ok=True)
+    filename = f"{prefix}_{uuid.uuid4().hex[:4]}.{ext}"
+    cur = conn.cursor()
+    cur.execute("INSERT OR IGNORE INTO images (file_path, sha256) VALUES (?, ?)",
+                (filename, digest))
+    if cur.lastrowid:
+        with open(os.path.join(PHOTOS_DIR, filename), "wb") as f:
+            f.write(data)
+        return cur.lastrowid
+    # 并发兜底：同内容已被并发请求插入 → 复用它的 id（本请求未落盘，无残留文件）
+    row = conn.execute("SELECT id FROM images WHERE sha256=?", (digest,)).fetchone()
+    return row[0]
 
 
 def save_container_image(uploaded_file, container_id):

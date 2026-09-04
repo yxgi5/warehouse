@@ -57,6 +57,13 @@ def main():
     row = conn.execute("SELECT id, name FROM items WHERE item_no='E2E_ITEM_001'").fetchone()
     assert row, "物品未落库"
     item_id = row[0]
+    # 保存成功应打开新物品详情（detail_item_id 指向新物品；AppTest 不执行切 Tab 的 JS）
+    assert at.session_state["detail_item_id"] == item_id, at.session_state["detail_item_id"]
+    print("✅ 保存成功自动打开新物品详情")
+    # 复位详情状态回到列表视图，供后续标签筛选/搜索的表格断言
+    at.session_state["detail_item_id"] = None
+    at.run()
+    assert len(at.exception) == 0, at.exception
     tags = {r[0] for r in conn.execute(
         "SELECT t.name FROM item_tags it JOIN tags t ON it.tag_id=t.id WHERE it.item_id=?",
         (item_id,))}
@@ -116,16 +123,26 @@ def main():
     assert lang_val == "English", lang_val
     print("✅ 语言切换 → 英文界面生效（Search / Tags / English）")
 
-    # ---- 6.5 列表视图工具栏：在表格下方常驻可点，未选中点击给提示 ----
-    # 回归保护：工具栏与容器列表一致位于表格下方，按钮必须可点（不滚动、不等二次 rerun），
-    # 未选中点击给 toast 而非崩。
+    # ---- 6.5 列表视图工具栏：常驻表格下方，未选中时禁用 + 提示（与 UI 设计一致） ----
+    # 回归保护：工具栏按钮在列表视图中直接可定位（不滚动、不等二次 rerun）。
+    # 「View Details」需恰好选中 1 行才 enabled；AppTest 无法模拟表格行选中，
+    # 因此这里验证 disabled 态按钮存在 + 未选中提示（info）已渲染；若历史状态
+    # 恰好有选中（enabled），点击进入详情也不应崩溃。
     view_btn = find_button(at, label_contains="View Details")
-    assert view_btn is not None and not view_btn.disabled, "列表工具栏「View Details」缺失或不可点"
-    view_btn.click()
-    at.run()
-    assert len(at.exception) == 0, at.exception
-    assert len(at.toast) > 0, "未选中时点击「View Details」应出现提示 toast"
-    print("✅ 列表工具栏在表格下方：按钮常驻可点，未选中点击有提示")
+    assert view_btn is not None, "列表工具栏「View Details」缺失"
+    if view_btn.disabled:
+        hints = [str(getattr(i, "value", "")) for i in at.info] + \
+                [str(getattr(s, "value", "")) for s in at.success]
+        assert any("select" in v.lower() for v in hints), f"未选中提示缺失: {hints}"
+        print("✅ 列表工具栏常驻：未选中时按钮禁用且有提示")
+    else:
+        view_btn.click()
+        at.run()
+        assert len(at.exception) == 0, at.exception
+        at.session_state["detail_item_id"] = None
+        at.run()
+        assert len(at.exception) == 0, at.exception
+        print("✅ 列表工具栏常驻：选中状态下点击进入详情无异常")
 
     # ---- 7. Phase 6: 容器管理 → 卡片视图 + 容器详情页渲染 ----
     assert len(at.tabs) >= 7, f"tabs 数量: {len(at.tabs)}"
@@ -157,12 +174,18 @@ def main():
     # 历史 bug：SQLite NULL 读入 pandas 为 NaN，`parent_id == None` 匹配 0 行
     # → 树完全空白。修复用 isna() 后断言顶层容器名出现在 Tab5。
     # Phase 6 调整：树只显示容器层级与物品数统计，不列具体物品行。
+    # 顶层容器名从库中动态读取（demo 数据可能用不同命名，硬编码会过时）。
+    conn2 = sqlite3.connect("warehouse.db")
+    top_names = [r[0] for r in conn2.execute(
+        "SELECT name FROM containers WHERE parent_id IS NULL ORDER BY id LIMIT 3")]
+    conn2.close()
+    assert top_names, "库中无顶层容器"
     tree_md = [str(getattr(m, "value", "")) for m in at.tabs[4].markdown]
     tree_text = "\n".join(tree_md)
-    for top_name in ("书房", "客厅", "储物间"):
+    for top_name in top_names:
         assert top_name in tree_text, f"容器树未渲染顶层容器「{top_name}」: {tree_text[:200]}"
     assert "ITEM_" not in tree_text, "容器树不应平铺具体物品行"
-    print("✅ 容器树渲染顶层容器且不平铺物品（34 节点 / isna 修复防回归）")
+    print(f"✅ 容器树渲染顶层容器（{', '.join(top_names)}）且不平铺物品（isna 修复防回归）")
 
     # 行尾「Detail」按钮 → 树 Tab 内就地打开容器详情页（1.40 无 tabs key，不做跨 Tab 跳转）
     tree_btn = find_button(at.tabs[4], label_contains="Detail")
@@ -189,7 +212,7 @@ def main():
     assert "tree_detail_id" not in at.session_state or at.session_state["tree_detail_id"] is None, \
         "返回后 tree_detail_id 未清除"
     tree_md_after = [str(getattr(m, "value", "")) for m in at.tabs[4].markdown]
-    assert any("书房" in v for v in tree_md_after), "返回后容器树未重新渲染"
+    assert any(top_names[0] in v for v in tree_md_after), "返回后容器树未重新渲染"
     print("✅ 容器树详情页返回按钮 → 回到树视图")
 
     # 恢复浏览状态

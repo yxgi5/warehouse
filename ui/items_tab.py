@@ -145,7 +145,7 @@ def render_edit_mode(conn, item_data, container_options):
             with col_up:
                 if idx > 0:
                     if st.button(i18n.t("items.img_up"), key=f"img_up_{img_id}", use_container_width=True):
-                        repo.move_image(conn, img_id, "up")
+                        repo.move_image(conn, item_data['id'], img_id, "up")
                         st.rerun()
                 else:
                     st.button(i18n.t("items.img_up"), key=f"img_up_{img_id}_disabled", disabled=True,
@@ -153,14 +153,14 @@ def render_edit_mode(conn, item_data, container_options):
             with col_down:
                 if idx < len(img_rows) - 1:
                     if st.button(i18n.t("items.img_down"), key=f"img_down_{img_id}", use_container_width=True):
-                        repo.move_image(conn, img_id, "down")
+                        repo.move_image(conn, item_data['id'], img_id, "down")
                         st.rerun()
                 else:
                     st.button(i18n.t("items.img_down"), key=f"img_down_{img_id}_disabled", disabled=True,
                               use_container_width=True)
             with col_del:
                 if st.button(i18n.t("items.img_del"), key=f"img_del_{img_id}", use_container_width=True):
-                    repo.delete_image(conn, img_id)
+                    repo.delete_image(conn, item_data['id'], img_id)
                     st.rerun()
     else:
         st.caption(i18n.t("common.no_images"))

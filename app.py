@@ -146,13 +146,38 @@ search, tag_filter = sidebar.render(conn)
 st.title(i18n.t("app.main_title"))
 
 # --- 定义Tabs ---
-# 注：Streamlit 1.40 的 st.tabs 不支持 key/on_change（1.55 才引入），
-# 跨 Tab 跳转通过"树 Tab 内就地渲染详情页"实现（见 tree_tab.py）。
+# 注：Streamlit 1.40 的 st.tabs 不支持 key/on_change（1.55 才引入）。
+# 树 Tab 内跨页跳转通过"就地渲染详情页"实现（见 tree_tab.py）；
+# 跨 Tab 跳转（如新增物品保存成功→物品 Tab）用一次性 goto_tab 标记 + JS 点击（见下）。
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
     [i18n.t("app.tab.items"), i18n.t("app.tab.dashboard"), i18n.t("app.tab.timeline"),
      i18n.t("app.tab.tags"), i18n.t("app.tab.tree"), i18n.t("app.tab.add"),
      i18n.t("app.tab.containers")]
 )
+
+# --- 一次性跨 Tab 跳转 ---
+# st.tabs 无法从后端切换激活 Tab，只能由组件脚本模拟点击目标 Tab 按钮
+# （iframe 与本 app 同源，可访问 parent DOM）。goto_tab 用 pop 消费：只在
+# 设置它的那一轮执行一次，绝不重复跳转。脚本重试最多 5 秒，覆盖组件
+# iframe 先于 Tab 按钮渲染完成的情况；任何异常静默，不影响页面。
+_goto = st.session_state.pop('goto_tab', None)
+if _goto is not None:
+    components.html(
+        '''<script>
+(function() {
+    var doc = window.parent.document;
+    var target = %d;
+    var n = 0;
+    function hit() {
+        try {
+            var btns = doc.querySelectorAll('button[data-testid="stTab"]');
+            if (btns.length > target) { btns[target].click(); return; }
+        } catch (e) {}
+        if (++n < 50) setTimeout(hit, 100);
+    }
+    hit();
+})();
+</script>''' % int(_goto), height=0)
 
 with tab1:
     items_tab.render(conn, search, tag_filter, container_options)

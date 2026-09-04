@@ -38,9 +38,12 @@ def render(conn, container_options):
                 st.error(i18n.t("add.item_no_exists", item_no=item_no))
             else:
                 try:
-                    repo.add_item(conn, item_no, name, container_options[container_name],
-                                  purchase_date.strftime('%Y-%m-%d'), platform, order_no,
-                                  price, features, description, tags, uploaded_files)
+                    item_id = repo.add_item(conn, item_no, name, container_options[container_name],
+                                            purchase_date.strftime('%Y-%m-%d'), platform, order_no,
+                                            price, features, description, tags, uploaded_files)
+                    # 保存成功：跳到物品 Tab 并直接打开新物品详情，用户立刻看到录入结果
+                    st.session_state.detail_item_id = item_id
+                    st.session_state.goto_tab = 0   # 0 = items Tab（st.tabs 顺序），app.py 顶层一次性消费
                     st.session_state.draft_advance = True   # 非 widget 键，可随时写；rerun 后于实例化前刷新编号
                     st.toast(i18n.t("add.saved", item_no=item_no), icon="🎉")
                     st.rerun()
