@@ -24,26 +24,28 @@ except Exception:  # 版本变动时退回 st.image 满宽显示
 _DETAIL_IMG_MAX_H = 300
 
 
-def render_detail_image(abs_path, img_id):
-    """详情页单图：HTML <img> 限高显示原图；失败返回 False 由调用方退回 st.image。
-    img_id（数字）拼坐标/缓存键：不能带盘符/路径字符。"""
+def _detail_image_url(abs_path, img_id):
+    """返回 media 存储中的原图 URL：media_file_mgr.add(路径) 按文件原字节入库
+    （内容哈希去重），服务端不做任何重编码，右键“新标签页打开图像”即原图。
+    失败返回 None 由调用方兜底。img_id（数字）拼坐标键，不能带盘符/路径字符。"""
     if _st_get_instance is None:
-        return False
+        return None
     try:
         mgr = _st_get_instance().media_file_mgr
         mime, _ = mimetypes.guess_type(abs_path)
-        url = mgr.add(abs_path, mime or "image/jpeg", f"detail_img_{img_id}")
+        return mgr.add(abs_path, mime or "image/jpeg", f"detail_img_{img_id}")
     except Exception as e:
-        db.logger.warning("render_detail_image 取原图 URL 失败: %r", e, exc_info=True)
-        return False
-    if not url:
-        return False
-    st.markdown(
-        f'<img src="{url}" alt="" style="display:block;max-width:100%;'
-        f'max-height:{_DETAIL_IMG_MAX_H}px;width:auto;height:auto;'
-        f'margin:0 auto;border-radius:8px">',
-        unsafe_allow_html=True)
-    return True
+        db.logger.warning("取详情图原图 URL 失败: %r", e, exc_info=True)
+        return None
+
+
+def _detail_img_style(single):
+    """详情图 CSS：单张居中大图；多张缩略图左对齐、间距固定（不居中不铺满）。"""
+    if single:
+        return ("display:block;max-width:100%;max-height:600px;width:auto;"
+                "height:auto;margin:0 auto;border-radius:8px")
+    return ("max-height:%dpx;max-width:100%%;width:auto;height:auto;"
+            "border-radius:8px" % _DETAIL_IMG_MAX_H)
 
 
 # ==================== 删除对话框 ====================
@@ -241,22 +243,42 @@ def render_detail_page(conn, item, container_options):
     img_rows = repo.load_images_full(conn, item['id'])
     if img_rows:
         st.write(i18n.t("items.detail_images"))
-        # 共用关系由 item_images 实时推导：某张图同时被别的物品引用时，
-        # 图下标注共用的物品（点按钮直接在详情间跳转）
+        # 共用关系由 item_images 实时推导：某张图同时被别的物品引用时，在图区下方
+        # 标注共用的物品（点按钮直接在详情间跳转）。共用提示不混入 HTML 画廊。
         peers = repo.load_image_peers(conn, item['id'])
-        cols = st.columns(min(4, len(img_rows)))
-        for idx, (img_id, path, _order) in enumerate(img_rows):
-            with cols[idx % 4]:
-                if os.path.exists(path):
-                    if not render_detail_image(path, img_id):
-                        # 取原图 URL 失败（异常/无运行时）时退回 st.image 满宽显示
-                        st.image(path, use_container_width=True)
-                else:
-                    st.caption(i18n.t("items.image_missing"))
-                shared = peers.get(img_id)
-                if shared:
-                    st.caption(i18n.t("items.img_shared_with"))
-                    for pid, pno, pname in shared:
+        single = len(img_rows) == 1
+        # 画廊：单张居中大图；多张用 flex 左对齐紧凑排布（不用 st.columns 等宽
+        # 网格——列会占满整行把图距拉开、图又在列内居中），超宽自动折行
+        gallery, fallback = [], []
+        for img_id, path, _order in img_rows:
+            if not os.path.exists(path):
+                gallery.append('<span style="color:#888;font-size:0.85em;padding:6px 0">'
+                               + i18n.t("items.image_missing") + '</span>')
+                continue
+            url = _detail_image_url(path, img_id)
+            if url:
+                gallery.append(f'<img src="{url}" alt="" style="{_detail_img_style(single)}">')
+            else:
+                fallback.append(path)  # 取原图 URL 失败（异常/无运行时）→ st.image 兜底
+        if gallery:
+            if single:
+                st.markdown("<div style='text-align:center'>" + "".join(gallery) + "</div>",
+                            unsafe_allow_html=True)
+            else:
+                st.markdown(
+                    '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start">'
+                    + "".join(gallery) + "</div>",
+                    unsafe_allow_html=True)
+        for path in fallback:
+            st.image(path, use_container_width=True)
+        # 共用物品提示（集中列于图区下方，按图顺序编号保持归属）
+        for idx, (img_id, _path, _order) in enumerate(img_rows):
+            shared = peers.get(img_id)
+            if shared:
+                st.caption(i18n.t("items.img_shared_at", n=idx + 1))
+                bcols = st.columns(len(shared))
+                for j, (pid, pno, pname) in enumerate(shared):
+                    with bcols[j]:
                         if st.button(pno, key=f"imgpeer_{pid}_{img_id}",
                                      help=pname, use_container_width=True):
                             st.session_state.detail_item_id = pid
