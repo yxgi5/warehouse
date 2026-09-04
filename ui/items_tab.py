@@ -97,9 +97,11 @@ def render_edit_mode(conn, item_data, container_options):
             cont_opts = [i18n.t("items.unfiled")] + list(container_options.keys())
             container_name = st.selectbox(i18n.t("form.container"), cont_opts,
                                           key="edit_container_name")
-            no_date = st.checkbox(i18n.t("common.no_date"), key="edit_no_date")
-            purchase_date = st.date_input(i18n.t("form.purchase_date"), key="edit_purchase_date",
-                                          disabled=no_date)
+            # 无日期勾选框是保存语义；date_input 不能 disabled 联动（form 内控件
+            # 变化不 rerun，禁用态不刷新，会出现“取消勾选仍不可填”）
+            no_date = st.checkbox(i18n.t("common.no_date"), key="edit_no_date",
+                                  help=i18n.t("common.no_date_help"))
+            purchase_date = st.date_input(i18n.t("form.purchase_date"), key="edit_purchase_date")
         with col2:
             platform = st.text_input(i18n.t("form.platform"), key="edit_platform")
             order_no = st.text_input(i18n.t("form.order_no"), key="edit_order_no")

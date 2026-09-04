@@ -50,6 +50,7 @@ def main():
     assert len(at.tabs[5].selectbox) == 1, "添加表单应有容器选择下拉"
     assert "(请选择容器)" in str(at.tabs[5].selectbox[0].value), "容器默认应为占位(未预选)"
     assert at.tabs[5].checkbox[0].value is True, "无购买日期应默认勾选(不预填日期)"
+    assert at.tabs[5].date_input[0].disabled is False, "日期框应始终可填(不得 disabled 联动勾选框)"
     print("✅ 添加表单字段齐全且默认无内容（编号/容器/日期不预填）")
 
     at.text_input(key="draft_item_no").set_value("E2E_ITEM_001")

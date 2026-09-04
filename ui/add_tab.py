@@ -19,10 +19,13 @@ def render(conn, container_options):
             name = st.text_input(i18n.t("form.name"))
             cont_opts = [i18n.t("add.select_container")] + list(container_options.keys())
             container_name = st.selectbox(i18n.t("form.container"), cont_opts)
-            # date_input 无法原生留空（不给 value 也默认今天）：默认勾选"无购买日期"
-            # = 不填；取消勾选后日期可选
-            no_date = st.checkbox(i18n.t("common.no_date"), value=True)
-            purchase_date = st.date_input(i18n.t("form.purchase_date"), disabled=no_date)
+            # date_input 无法原生留空（不给 value 也默认今天）。勾选框是保存语义：
+            # 默认勾选=无购买日期（存空）；取消勾选即可填日期。注意不能把 date_input
+            # disabled 绑定到勾选框——form 内控件变化不触发 rerun，禁用状态不会刷新，
+            # 会出现“勾了没反应/取消了仍不可填”。日期框始终保持可用。
+            no_date = st.checkbox(i18n.t("common.no_date"), value=True,
+                                  help=i18n.t("common.no_date_help"))
+            purchase_date = st.date_input(i18n.t("form.purchase_date"))
         with col2:
             platform = st.text_input(i18n.t("form.platform"))
             order_no = st.text_input(i18n.t("form.order_no"))
