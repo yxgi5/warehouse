@@ -7,8 +7,10 @@
 repo 层（DB 逻辑已由 test_data_layer.py 覆盖）。
 """
 import os
+import base64
 import sqlite3
 import sys
+import types
 
 # 仓库根目录锚定：跟随脚本自身位置（目录可改名/搬移）
 _BASE = os.path.dirname(os.path.abspath(__file__))
@@ -96,6 +98,23 @@ def main():
     assert len(at.exception) == 0, at.exception
     print("✅ 详情页渲染 0 异常")
 
+    # ---- 3b. 造两件共用同一张图（同字节内容）的物品：UI 无法上传文件，走 repo 层 ----
+    cid2 = conn.execute("SELECT container_id FROM items WHERE id=?", (item_id,)).fetchone()[0]
+    img_x = base64.b64decode(   # 合法 1x1 JPEG（魔数校验后 st.image 还能真正渲染）
+        '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8U'
+        'HRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QA'
+        'FAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//'
+        '2Q==')
+    peer_a = repo.add_item(conn, "E2E_IMG_A", "共图甲", cid2, "", "", "", 0, "", "", "",
+                           [types.SimpleNamespace(name="x.jpg", getbuffer=lambda: img_x)])
+    peer_b = repo.add_item(conn, "E2E_IMG_B", "共图乙", cid2, "", "", "", 0, "", "", "",
+                           [types.SimpleNamespace(name="x.jpg", getbuffer=lambda: img_x)])
+    assert repo.load_related_items(conn, peer_a) == [] and repo.load_related_items(conn, peer_b) == [], \
+        "repo 直造物品不应有手动关联"
+    assert len(repo.load_image_peers(conn, peer_a).get(
+        repo.load_images_full(conn, peer_a)[0][0], [])) == 1, "共图关系未推导"
+    print("✅ 共用图推导：两件物品同字节图互见（item_images 实时）")
+
     # ---- 4. 详情页点"✏️ 编辑" → 编辑页渲染 ----
     btn = find_button(at, label_exact="✏️ 编辑")
     assert btn is not None, "详情页无编辑按钮"
@@ -106,10 +125,55 @@ def main():
     assert any("E2E_ITEM_001" in v for v in edit_texts), "编辑表单未带出编号"
     print("✅ 编辑页渲染 0 异常，编号已带出")
 
+    # ---- 4b. 编辑表单录入“关联物品编号”（整体校验通过）→ 提交落库 item_links ----
+    at.text_input(key="edit_related_items").set_value("E2E_IMG_A, E2E_IMG_B")
+    btn = find_button(at, label_contains="更新物品")
+    assert btn is not None, "编辑表单无保存按钮"
+    btn.click()
+    at.run()
+    assert len(at.exception) == 0, at.exception
+    assert len(at.error) == 0, [str(getattr(e, "value", "")) for e in at.error]
+    pairs = sorted(conn.execute("SELECT a_id, b_id FROM item_links").fetchall())
+    assert pairs == sorted([(item_id, peer_a), (item_id, peer_b)]), pairs
+    print("✅ 编辑保存关联编号 → item_links 落库（无向单行 a<b）")
+
+    # ---- 4c. 详情页关联区与图下共用提示的跳转闭环 ----
+    # E2E_ITEM_001（无图）详情：关联区列出两件，点按钮切到对方详情
+    at.session_state["detail_item_id"] = item_id
+    at.run()
+    assert len(at.exception) == 0, at.exception
+    btn_a = find_button(at, label_exact="E2E_IMG_A 共图甲")
+    assert btn_a is not None, "详情关联区缺 E2E_IMG_A 按钮"
+    btn_a.click()
+    at.run()
+    assert len(at.exception) == 0, at.exception
+    assert at.session_state["detail_item_id"] == peer_a, "关联按钮未跳转到 E2E_IMG_A"
+    # E2E_IMG_A 详情（带图）：图下“也用于 E2E_IMG_B”，点按钮切过去
+    btn_b = find_button(at, label_exact="E2E_IMG_B")
+    assert btn_b is not None, "共用图下方缺 E2E_IMG_B 跳转按钮"
+    btn_b.click()
+    at.run()
+    assert len(at.exception) == 0, at.exception
+    assert at.session_state["detail_item_id"] == peer_b, "共用图按钮未跳转到 E2E_IMG_B"
+    # E2E_IMG_B 详情：图下提示 A、关联区提示 E2E_ITEM_001，均可跳
+    btn_a2 = find_button(at, label_exact="E2E_IMG_A")
+    assert btn_a2 is not None, "E2E_IMG_B 图下缺 E2E_IMG_A 按钮"
+    back_link = find_button(at, label_exact="E2E_ITEM_001 E2E测试物品")
+    assert back_link is not None, "E2E_IMG_B 关联区缺 E2E_ITEM_001 按钮"
+    back_link.click()
+    at.run()
+    assert len(at.exception) == 0, at.exception
+    assert at.session_state["detail_item_id"] == item_id, "关联区按钮未跳回 E2E_ITEM_001"
+    print("✅ 详情页关联区/共用图下按钮双向跳转闭环")
+
     # ---- 5. 清理测试数据（走唯一删除入口）----
+    repo.delete_item(conn, peer_a)
+    repo.delete_item(conn, peer_b)
     repo.delete_item(conn, item_id)
+    assert conn.execute("SELECT COUNT(*) FROM item_links").fetchone()[0] == 0, \
+        "删除物品后 item_links 残留"
     conn.close()
-    print("✅ 测试数据已清理")
+    print("✅ 测试数据已清理（含 item_links 级联清空）")
 
     # ---- 6. Phase 5: 语言切换（global_lang 仅 set 一次；切英文后 label 变化即生效） ----
     at.sidebar.selectbox(key="global_lang").set_value("English")

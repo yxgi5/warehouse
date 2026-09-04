@@ -74,6 +74,9 @@ def start_edit(conn, item_id, container_options):
     st.session_state.edit_order_no = item['order_no']
     st.session_state.edit_price = float(item['price'])
     st.session_state.edit_tags = item['tags']
+    # 编辑框预填当前手动关联的编号（逗号分隔），保存时整体重建
+    st.session_state.edit_related_items = ", ".join(
+        r[1] for r in repo.load_related_items(conn, item_id))
     st.session_state.edit_features = item['features']
     st.session_state.edit_description = item['description']
     # 注意：edit_uploaded_files 是 file_uploader 的 key，禁止用 session_state 赋值（Streamlit 策略）
@@ -97,6 +100,8 @@ def render_edit_mode(conn, item_data, container_options):
             price = st.number_input(i18n.t("form.price"), min_value=0.0, format="%.2f", step=0.1,
                                     key="edit_price")
             tags = st.text_input(i18n.t("form.tags"), key="edit_tags")
+            related_items = st.text_input(i18n.t("form.related_items"), key="edit_related_items",
+                                          help=i18n.t("form.related_help"))
         features = st.text_area(i18n.t("form.features"), key="edit_features")
         description = st.text_area(i18n.t("form.description"), key="edit_description")
 
@@ -119,7 +124,8 @@ def render_edit_mode(conn, item_data, container_options):
                     repo.update_item(conn, item_data['id'], item_no, name,
                                      container_options[container_name],
                                      purchase_date.strftime('%Y-%m-%d'), platform, order_no,
-                                     price, features, description, tags, uploaded_files)
+                                     price, features, description, tags, uploaded_files,
+                                     repo.parse_related_text(related_items))
                     st.session_state.edit_item_id = None
                     st.toast(i18n.t("items.updated"), icon="🎉")
                     st.rerun()
@@ -186,15 +192,46 @@ def render_detail_page(conn, item, container_options):
 
     st.subheader(i18n.t("items.detail_title", item_no=item['item_no'], name=item['name']))
 
-    img_paths = repo.load_images_by_item(conn, item['id'])
-    if img_paths:
+    img_rows = repo.load_images_full(conn, item['id'])
+    if img_rows:
         st.write(i18n.t("items.detail_images"))
-        cols = st.columns(min(4, len(img_paths)))
-        for idx, path in enumerate(img_paths):
-            if os.path.exists(path):
-                cols[idx % 4].image(path, use_container_width=True)
+        # 共用关系由 item_images 实时推导：某张图同时被别的物品引用时，
+        # 图下标注共用的物品（点按钮直接在详情间跳转）
+        peers = repo.load_image_peers(conn, item['id'])
+        cols = st.columns(min(4, len(img_rows)))
+        for idx, (img_id, path, _order) in enumerate(img_rows):
+            with cols[idx % 4]:
+                if os.path.exists(path):
+                    st.image(path, use_container_width=True)
+                else:
+                    st.caption(i18n.t("items.image_missing"))
+                shared = peers.get(img_id)
+                if shared:
+                    st.caption(i18n.t("items.img_shared_with"))
+                    for pid, pno, pname in shared:
+                        if st.button(pno, key=f"imgpeer_{pid}_{img_id}",
+                                     help=pname, use_container_width=True):
+                            st.session_state.detail_item_id = pid
+                            st.rerun()
     else:
         st.caption(i18n.t("common.no_images"))
+
+    st.divider()
+
+    # --- 关联物品（手动录入的关系，点击按钮直接跳到对方详情）---
+    related = repo.load_related_items(conn, item['id'])
+    st.write(i18n.t("items.related_title"))
+    if related:
+        for k in range(0, len(related), 3):
+            row_cols = st.columns(min(3, len(related) - k))
+            for j, (rid, rno, rname) in enumerate(related[k:k + 3]):
+                with row_cols[j]:
+                    if st.button(f"{rno} {rname}", key=f"related_{rid}",
+                                 use_container_width=True):
+                        st.session_state.detail_item_id = rid
+                        st.rerun()
+    else:
+        st.caption(i18n.t("items.related_empty"))
 
     st.divider()
     col1, col2 = st.columns(2)

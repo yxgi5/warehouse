@@ -68,6 +68,8 @@ TRANSLATIONS = {
         "form.order_no": "订单号",
         "form.price": "价格 (元)",
         "form.tags": "标签 (逗号分隔)",
+        "form.related_items": "关联物品编号 (逗号分隔)",
+        "form.related_help": "输入已有物品的编号，多个用英文/中文逗号或分号分隔（编号两侧空格自动忽略）；编号不存在会阻止保存",
         "form.features": "特点",
         "form.description": "附加说明",
         "form.required_msg": "编号和名称不能为空",
@@ -101,6 +103,7 @@ TRANSLATIONS = {
         "items.delete": "🗑️ 删除",
         "items.detail_title": "📦 {item_no} - {name}",
         "items.detail_images": "**📷 图片**",
+        "items.img_shared_with": "此图也用于",
         "items.f_item_no": "**编号**",
         "items.f_name": "**名称**",
         "items.f_container": "**容器**",
@@ -128,6 +131,9 @@ TRANSLATIONS = {
         "items.open_detail": "📄 打开详情",
         "items.not_found": "物品不存在",
         "items.edit_not_found": "要编辑的物品不存在",
+        "items.err_related_missing": "关联物品编号不存在: {nos}",
+        "items.related_title": "**🔗 关联物品**",
+        "items.related_empty": "暂无关联物品（添加/编辑时输入编号即可关联）",
 
         # ==================== 新增物品 ====================
         "add.title": "📝 录入新物品",
@@ -282,6 +288,8 @@ TRANSLATIONS = {
         "form.order_no": "Order No.",
         "form.price": "Price (CNY)",
         "form.tags": "Tags (comma-separated)",
+        "form.related_items": "Related Item No. (comma-separated)",
+        "form.related_help": "Existing item numbers separated by English/Chinese comma or semicolon (spaces around numbers are ignored); an unknown number blocks saving",
         "form.features": "Features",
         "form.description": "Description",
         "form.required_msg": "Item No. and name are required",
@@ -315,6 +323,7 @@ TRANSLATIONS = {
         "items.delete": "🗑️ Delete",
         "items.detail_title": "📦 {item_no} - {name}",
         "items.detail_images": "**📷 Images**",
+        "items.img_shared_with": "Also used by",
         "items.f_item_no": "**Item No.**",
         "items.f_name": "**Name**",
         "items.f_container": "**Container**",
@@ -342,6 +351,9 @@ TRANSLATIONS = {
         "items.open_detail": "📄 Open Details",
         "items.not_found": "Item not found",
         "items.edit_not_found": "The item to edit was not found",
+        "items.err_related_missing": "Related item numbers not found: {nos}",
+        "items.related_title": "**🔗 Related Items**",
+        "items.related_empty": "No related items (type item numbers in Add/Edit to link)",
 
         # ==================== Add item ====================
         "add.title": "📝 Add New Item",

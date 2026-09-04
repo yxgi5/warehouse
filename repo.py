@@ -7,6 +7,7 @@
 - 物品删除只有一个入口 delete_item()——单个删除 / 批量删除都走它。
 """
 import os
+import re
 import pandas as pd
 import db
 import i18n
@@ -42,9 +43,18 @@ def item_no_exists(conn, item_no, exclude_id=None):
 
 
 def add_item(conn, item_no, name, container_id, purchase_date, platform, order_no,
-             price, features, description, tags, uploaded_files):
-    """新增物品（含标签关联与图片落盘）。返回新物品 id。"""
+             price, features, description, tags, uploaded_files, related_nos=None):
+    """新增物品（含标签关联、图片落盘与手动关联）。返回新物品 id。
+    related_nos 为关联的已有物品编号列表：等于本物品编号的静默忽略（自关联无意义），
+    任一编号不存在则抛 ValueError——先整体校验再动库，绝不写一半。"""
     c = conn.cursor()
+    if related_nos:
+        link_ids, missing = _resolve_linked_ids(
+            conn, [no for no in related_nos if no != item_no])
+        if missing:
+            raise ValueError(i18n.t("items.err_related_missing", nos=", ".join(missing)))
+    else:
+        link_ids = []
     c.execute('''INSERT INTO items (item_no, name, container_id, purchase_date, platform,
                                     order_no, price, features, description)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
@@ -63,14 +73,25 @@ def add_item(conn, item_no, name, container_id, purchase_date, platform, order_n
             seen.add(image_id)
             c.execute("INSERT INTO item_images (item_id, image_id, sort_order) VALUES (?, ?, ?)",
                       (item_id, image_id, len(seen) - 1))
+    if link_ids:
+        _replace_item_links(c, item_id, link_ids)
     conn.commit()
     return item_id
 
 
 def update_item(conn, item_id, item_no, name, container_id, purchase_date, platform,
-                order_no, price, features, description, tags, uploaded_files):
-    """更新物品（含标签重建与新图片追加）。"""
+                order_no, price, features, description, tags, uploaded_files,
+                related_nos=None):
+    """更新物品（含标签重建与新图片追加）。related_nos=None 不改动关联；
+    传入列表则整体重建手动关联（编辑框内容即最终状态），自身编号静默忽略，
+    不存在的编号先整体报错——校验通过前不写库。"""
     c = conn.cursor()
+    if related_nos is not None:
+        link_ids, missing = _resolve_linked_ids(conn, related_nos, exclude_id=item_id)
+        if missing:
+            raise ValueError(i18n.t("items.err_related_missing", nos=", ".join(missing)))
+    else:
+        link_ids = None
     c.execute('''UPDATE items SET item_no=?, name=?, container_id=?, purchase_date=?,
                                  platform=?, order_no=?, price=?, features=?, description=?
                  WHERE id=?''',
@@ -91,7 +112,59 @@ def update_item(conn, item_id, item_no, name, container_id, purchase_date, platf
             c.execute("INSERT INTO item_images (item_id, image_id, sort_order) VALUES (?, ?, ?)",
                       (item_id, image_id, order))
             order += 1
+    if link_ids is not None:
+        _replace_item_links(c, item_id, link_ids)
     conn.commit()
+
+
+# ==================== 物品关联（item_links：手动录入，无向一行 a<b） ====================
+
+def parse_related_text(text):
+    """解析“关联物品编号”输入 → 去空去重后的编号列表。兼容 中文逗号/英文逗号/分号
+    分隔，编号两侧空白一律无视（与标签归一先例一致）。"""
+    if not text or not text.strip():
+        return []
+    seen, out = set(), []
+    for no in (p.strip() for p in re.split(r"[,，;；]", text) if p.strip()):
+        if no not in seen:
+            seen.add(no)
+            out.append(no)
+    return out
+
+
+def _resolve_linked_ids(conn, item_nos, exclude_id=None):
+    """关联编号 → (目标 id 列表, 缺失编号列表)：自身（exclude_id）静默忽略。"""
+    c = conn.cursor()
+    ids, missing = [], []
+    for no in item_nos:
+        row = c.execute("SELECT id FROM items WHERE item_no=?", (no,)).fetchone()
+        if row is None:
+            missing.append(no)
+        elif row[0] != exclude_id:
+            ids.append(row[0])
+    return ids, missing
+
+
+def _replace_item_links(c, item_id, link_ids):
+    """重建某物品的手动关联：删除其参与的全部行，再按 a<b 规范化插入
+    （配合 item_links 的 CHECK (a_id < b_id) 与复合主键天然去重）。"""
+    c.execute("DELETE FROM item_links WHERE a_id=? OR b_id=?", (item_id, item_id))
+    for oid in set(link_ids):
+        if oid == item_id:
+            continue   # 防御：正常已由 _resolve_linked_ids 的 exclude_id 剔除
+        a, b = (item_id, oid) if item_id < oid else (oid, item_id)
+        c.execute("INSERT INTO item_links (a_id, b_id) VALUES (?, ?)", (a, b))
+
+
+def load_related_items(conn, item_id):
+    """物品手动关联的其他物品 [(id, item_no, name)]（按 id 升序；
+    单行无向，从任一端查询结果一致）。"""
+    c = conn.cursor()
+    c.execute('''SELECT i.id, i.item_no, i.name FROM item_links l
+                 JOIN items i ON i.id = CASE WHEN l.a_id=? THEN l.b_id ELSE l.a_id END
+                 WHERE l.a_id=? OR l.b_id=? ORDER BY i.id''',
+              (item_id, item_id, item_id))
+    return c.fetchall()
 
 
 def delete_item(conn, item_id):
@@ -177,6 +250,21 @@ def load_first_image_map(conn, item_ids):
               ON ii.item_id = m.item_id AND ii.sort_order = m.so
             WHERE ii.item_id IN ({marks})''', list(item_ids)).fetchall()
     return {iid: db.img_abs_path(p) for iid, p in rows}
+
+
+def load_image_peers(conn, item_id):
+    """该物品每张图片的共用者（排除自身）：{image_id: [(id, item_no, name)]}。
+    共用关系不入库，由 item_images 实时推导，供详情页在图片下标注并跳转。"""
+    c = conn.cursor()
+    c.execute('''SELECT ii.image_id, i.id, i.item_no, i.name
+                 FROM item_images ii
+                 JOIN item_images mine ON mine.item_id=? AND mine.image_id=ii.image_id
+                 JOIN items i ON i.id = ii.item_id
+                 WHERE ii.item_id != ? ORDER BY i.id''', (item_id, item_id))
+    peers = {}
+    for image_id, pid, pno, pname in c.fetchall():
+        peers.setdefault(image_id, []).append((pid, pno, pname))
+    return peers
 
 
 def set_item_tags(conn, item_id, tags_str):

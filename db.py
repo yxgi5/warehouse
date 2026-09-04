@@ -72,6 +72,13 @@ def init_db(conn=None):
             item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
             tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
             PRIMARY KEY (item_id, tag_id))''')
+        # 物品手动关联（item_links）：无向关系只存一行，a<b 规范化（CHECK 约束）；
+        # 任一端物品删除时级联清关联。共用图片的关系不入库，由 item_images 实时推导。
+        c.execute('''CREATE TABLE IF NOT EXISTS item_links (
+            a_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+            b_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+            PRIMARY KEY (a_id, b_id),
+            CHECK (a_id < b_id))''')
         # 容器图片表（Phase 6：与 items 的 images 表独立，互不干扰）
         c.execute('''CREATE TABLE IF NOT EXISTS container_images (
             id INTEGER PRIMARY KEY, container_id INTEGER

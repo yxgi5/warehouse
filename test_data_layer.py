@@ -61,7 +61,8 @@ def main():
 
     # ---------- 建表与初始化 ----------
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    check("建表齐全", {"tags", "item_tags", "containers", "items", "images", "container_images"} <= tables, str(tables))
+    check("建表齐全", {"tags", "item_tags", "containers", "items", "images", "container_images",
+                     "item_links"} <= tables, str(tables))
     check("外键已开启", conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1)
     check("初始化后无内置容器（种子已移除）", conn.execute("SELECT COUNT(*) FROM containers").fetchone()[0] == 0)
 
@@ -157,6 +158,11 @@ def main():
     s2_rows = repo.load_images_full(conn, s2)   # [c]，与 s1 的 c 同一池记录
     check("两物品关联同一池图片", len(s1_rows) == 2 and len(s2_rows) == 1
           and s2_rows[0][0] == s1_rows[0][0], f"{s1_rows} | {s2_rows}")
+    # 共用图在详情页的“也用于”提示数据源：实时推导共用者，独有图不出现
+    peers_s1 = repo.load_image_peers(conn, s1)
+    check("load_image_peers 独有图无共用者", s1_rows[1][0] not in peers_s1, str(peers_s1))
+    check("load_image_peers 共用图列出对方",
+          peers_s1.get(s1_rows[0][0]) == [(s2, "ITEM_20260820_901", "共享客")], str(peers_s1))
     # 物品内重复上传被跳过（s2 只关联 1 行）；共享图在 s1 内上移（d 与 c 交换），
     # s2 中顺序不受影响
     ok_smove = repo.move_image(conn, s1, s1_rows[1][0], "up")
@@ -168,6 +174,7 @@ def main():
     ok_unlink = repo.delete_image(conn, s1, shared_c[0])
     check("从 s1 移除共享图仅解关联", ok_unlink
           and [r[0] for r in repo.load_images_full(conn, s1)] == [s1_rows[1][0]])
+    check("解关联后另一物品不再提示共用者", repo.load_image_peers(conn, s2) == {})
     check("共享图文件保留（仍被 s2 引用）", os.path.exists(shared_c[1]))
     check("共享图池记录保留", conn.execute("SELECT COUNT(*) FROM images WHERE id=?",
                                            (shared_c[0],)).fetchone()[0] == 1)
@@ -226,6 +233,67 @@ def main():
         repo.delete_item(conn, bid)
     check("批量删除=多次 delete_item", repo.load_item_by_id(conn, b1) is None
           and repo.load_item_by_id(conn, b2) is None)
+
+    # ---------- Phase 8: 物品手动关联（item_links：编号录入，整体校验） ----------
+    check("parse_related_text 空输入为 []", repo.parse_related_text("") == []
+          and repo.parse_related_text(" ， ； ") == [])
+    parsed = repo.parse_related_text(" ITEM_20260820_001 , ITEM_20260820_002；ITEM_20260820_001， ITEM_20260820_003 ")
+    check("parse_related_text 混合分隔/去空格/去重",
+          parsed == ["ITEM_20260820_001", "ITEM_20260820_002", "ITEM_20260820_003"], str(parsed))
+
+    r1 = repo.add_item(conn, "ITEM_20260820_800", "关联新人", cid, "", "", "", 0, "", "", "", [],
+                       repo.parse_related_text("ITEM_20260820_001, ITEM_20260820_002"))
+    rl1 = repo.load_related_items(conn, r1)
+    check("add_item 关联落库（按 id 升序）",
+          [(x[1], x[2]) for x in rl1] == [("ITEM_20260820_001", "苹果手机"),
+                                          ("ITEM_20260820_002", "红苹果")], str(rl1))
+    check("关联双向对称（对方视角含新物品）",
+          [x[1] for x in repo.load_related_items(conn, i1)] == ["ITEM_20260820_800"])
+    rows = conn.execute("SELECT a_id, b_id FROM item_links").fetchall()
+    check("item_links 无向单行且 a<b 规范化",
+          len(rows) == 2 and all(a < b for a, b in rows) and (min(i1, r1), max(i1, r1)) in rows,
+          str(rows))
+
+    # 整体校验：任一编号不存在 → 整单报错，物品与关联都不写入
+    n_before = conn.execute("SELECT COUNT(*) FROM items").fetchone()[0]
+    try:
+        repo.add_item(conn, "ITEM_20260820_801", "坏关联", cid, "", "", "", 0, "", "", "", [],
+                      repo.parse_related_text("ITEM_20260820_001, 不存在_XYZ, ITEM_20260820_802"))
+        check("add 缺失编号整单报错", False, "未抛异常")
+    except ValueError as e:
+        check("add 缺失编号整单报错并列出全部",
+              "不存在_XYZ" in str(e) and "ITEM_20260820_802" in str(e), str(e))
+    check("add 报错时物品未插入",
+          conn.execute("SELECT COUNT(*) FROM items").fetchone()[0] == n_before)
+
+    # 更新 = 整体重建：旧关系被替换；输入自身编号静默忽略；空列表清空
+    repo.update_item(conn, r1, "ITEM_20260820_800", "关联新人", cid, "", "", "", 0, "", "", "", [],
+                     related_nos=repo.parse_related_text("ITEM_20260820_003, ITEM_20260820_800"))
+    check("update_item 覆盖重建关联且自身忽略",
+          [x[1] for x in repo.load_related_items(conn, r1)] == ["ITEM_20260820_003"], str(rl1))
+    check("被移除端的关联同步消失", repo.load_related_items(conn, i1) == [])
+    repo.update_item(conn, r1, "ITEM_20260820_800", "关联新人", cid, "", "", "", 0, "", "", "", [],
+                     related_nos=[])
+    check("空关联列表清空关联", repo.load_related_items(conn, r1) == []
+          and repo.load_related_items(conn, i3) == [])
+
+    # 更新带缺失编号：整体报错，名称与既有关联都不变
+    try:
+        repo.update_item(conn, r1, "ITEM_20260820_800", "改名", cid, "", "", "", 0, "", "", "", [],
+                         related_nos=repo.parse_related_text("ITEM_20260820_003, 不存在_XYZ"))
+        check("update 缺失编号整单报错", False, "未抛异常")
+    except ValueError:
+        check("update 缺失编号时名称与关联都不变",
+              repo.load_item_by_id(conn, r1)['name'] == "关联新人"
+              and repo.load_related_items(conn, r1) == [])
+
+    # 删除物品：外键级联清掉它参与的全部关联行
+    r2 = repo.add_item(conn, "ITEM_20260820_803", "关联临时", cid, "", "", "", 0, "", "", "", [],
+                       repo.parse_related_text("ITEM_20260820_800"))
+    repo.delete_item(conn, r2)
+    check("删除物品级联清关联",
+          repo.load_related_items(conn, r1) == []
+          and conn.execute("SELECT COUNT(*) FROM item_links").fetchone()[0] == 0)
 
     # ---------- Phase 4: CSV 批量导入 ----------
     i18n.set_lang("zh")   # 错误消息断言依赖中文（应用默认语言为英文）
@@ -405,6 +473,10 @@ def main():
     check("迁移幂等（不重复拆）", oc.execute("SELECT COUNT(*) FROM item_tags").fetchone()[0] == 2)
     check("图片池迁移幂等", oc.execute("SELECT COUNT(*) FROM images").fetchone()[0] == 1
           and oc.execute("SELECT COUNT(*) FROM item_images").fetchone()[0] == 1)
+    # item_links 是全新表：迁移只补建表，无需搬任何数据
+    check("迁移建出 item_links 空表",
+          oc.execute("SELECT COUNT(*) FROM item_links").fetchone()[0] == 0
+          and {r[1] for r in oc.execute("PRAGMA table_info(item_links)")} == {"a_id", "b_id"})
     # 旧库 items 表无外键：验证迁移后删除容器被 RESTRICT 拒绝
     oc.execute("PRAGMA foreign_keys=ON")
     try:

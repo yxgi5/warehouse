@@ -26,6 +26,8 @@ def render(conn, container_options):
             order_no = st.text_input(i18n.t("form.order_no"))
             price = st.number_input(i18n.t("form.price"), min_value=0.0, format="%.2f", step=0.1)
             tags = st.text_input(i18n.t("form.tags"))
+            related_items = st.text_input(i18n.t("form.related_items"),
+                                          help=i18n.t("form.related_help"))
         features = st.text_area(i18n.t("form.features"))
         description = st.text_area(i18n.t("form.description"))
         uploaded_files = st.file_uploader(i18n.t("add.upload_images"), type=['jpg', 'png', 'jpeg', 'gif'],
@@ -40,7 +42,8 @@ def render(conn, container_options):
                 try:
                     item_id = repo.add_item(conn, item_no, name, container_options[container_name],
                                             purchase_date.strftime('%Y-%m-%d'), platform, order_no,
-                                            price, features, description, tags, uploaded_files)
+                                            price, features, description, tags, uploaded_files,
+                                            repo.parse_related_text(related_items))
                     # 保存成功：跳到物品 Tab 并直接打开新物品详情，用户立刻看到录入结果
                     st.session_state.detail_item_id = item_id
                     st.session_state.goto_tab = 0   # 0 = items Tab（st.tabs 顺序），app.py 顶层一次性消费
