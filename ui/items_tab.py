@@ -8,6 +8,32 @@ import db
 import repo
 import i18n
 
+try:
+    from PIL import Image as _PILImage
+except Exception:  # Pillow 缺失时退回满宽显示
+    _PILImage = None
+
+
+# ==================== 详情图片尺寸 ====================
+# 详情页图片若按列宽 1:1 显示，竖图（手机照片 3:4/9:16）高度会远超一屏。
+# 竖图按高度上限等比换算显示宽度（横图高度天然小于上限，继续满列宽）。
+# st.image 只能按宽度缩放，没有 max-height 能力，故用 PIL 读取真实尺寸计算。
+_DETAIL_IMG_MAX_H = 300
+
+
+def _detail_img_width(path):
+    """返回限制高度后的显示宽度；横图/方图返回 None 表示满列宽显示。"""
+    if _PILImage is None:
+        return None
+    try:
+        with _PILImage.open(path) as im:  # 惰性读文件头，不解码全图
+            w, h = im.size
+    except Exception:
+        return None
+    if w >= h:
+        return None
+    return round(_DETAIL_IMG_MAX_H * w / h)
+
 
 # ==================== 删除对话框 ====================
 # 注意：@st.dialog 的 title 参数在模块 import 时求值一次，不能直接用 i18n.t()
@@ -211,7 +237,11 @@ def render_detail_page(conn, item, container_options):
         for idx, (img_id, path, _order) in enumerate(img_rows):
             with cols[idx % 4]:
                 if os.path.exists(path):
-                    st.image(path, use_container_width=True)
+                    w_px = _detail_img_width(path)
+                    if w_px:
+                        st.image(path, width=w_px)  # 竖图：限制高度，一屏内可纵览全部
+                    else:
+                        st.image(path, use_container_width=True)
                 else:
                     st.caption(i18n.t("items.image_missing"))
                 shared = peers.get(img_id)
