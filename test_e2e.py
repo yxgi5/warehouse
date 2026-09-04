@@ -48,6 +48,9 @@ def main():
     btn.click()
     at.run()
     assert len(at.exception) == 0, at.exception
+    # 回归保护：保存成功不得出现错误提示（历史 bug：widget 实例化后改写
+    # draft_item_no 导致 Save failed，但物品已落库，误导用户）
+    assert len(at.error) == 0, [str(getattr(e, "value", "")) for e in at.error]
 
     conn = sqlite3.connect("warehouse.db")
     conn.execute("PRAGMA foreign_keys=ON")

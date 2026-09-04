@@ -13,7 +13,9 @@ def render(conn, container_options):
         st.subheader(i18n.t("add.title"))
         col1, col2 = st.columns(2)
         with col1:
-            if 'draft_item_no' not in st.session_state:
+            # widget 状态只能在实例化前写入：保存成功后置 draft_advance 再 rerun，
+            # 在这里（实例化前）统一消费该标记，刷新为下一个编号
+            if st.session_state.pop('draft_advance', False) or 'draft_item_no' not in st.session_state:
                 st.session_state.draft_item_no = db.next_item_no(conn)
             item_no = st.text_input(i18n.t("add.item_no"), key="draft_item_no")
             name = st.text_input(i18n.t("form.name"))
@@ -39,7 +41,7 @@ def render(conn, container_options):
                     repo.add_item(conn, item_no, name, container_options[container_name],
                                   purchase_date.strftime('%Y-%m-%d'), platform, order_no,
                                   price, features, description, tags, uploaded_files)
-                    st.session_state.draft_item_no = db.next_item_no(conn)   # 预生成下一个编号
+                    st.session_state.draft_advance = True   # 非 widget 键，可随时写；rerun 后于实例化前刷新编号
                     st.toast(i18n.t("add.saved", item_no=item_no), icon="🎉")
                     st.rerun()
                 except Exception as e:
