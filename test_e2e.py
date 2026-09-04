@@ -149,6 +149,33 @@ def main():
         repo.load_images_full(conn, peer_a)[0][0], [])) == 1, "共图关系未推导"
     print("✅ 共用图推导：两件物品同字节图互见（item_images 实时）")
 
+    # ---- 2e. 卡片视图：首图按详情页缩略图规格渲染（HTML img + media 原图 URL，
+    # 非 st.image 满列宽——竖图会被撑得过高）。置于 3b 后：E2E_ITEM_001 由 UI 创建
+    # 无照片（AppTest 无法上传文件），须用 3b repo 层造的带图物品 E2E_IMG_A 驱动；
+    # 本段在步骤 6 切英文之前，界面为中文 ----
+    at.session_state["detail_item_id"] = None   # 退出详情回浏览态（步骤 3 注入的）
+    at.sidebar.text_input(key="global_search").set_value("")      # 清残留筛选
+    at.sidebar.text_input(key="global_tag_filter").set_value("")
+    at.run()
+    assert len(at.exception) == 0, at.exception
+    at.sidebar.text_input(key="global_search").set_value("E2E_IMG_A")
+    at.run()
+    assert len(at.exception) == 0, at.exception
+    at.tabs[0].radio[0].set_value("卡片")   # 中文界面 items.view_card
+    at.run()
+    assert len(at.exception) == 0, at.exception
+    assert any("<img src=" in str(getattr(m, "value", "")) and "/media/" in str(getattr(m, "value", ""))
+               for m in at.tabs[0].markdown), "卡片视图首图未走 HTML img 原图 URL 渲染"
+    print("✅ 卡片视图首图按详情页规格渲染（HTML img 限高原图）")
+    at.tabs[0].radio[0].set_value("列表")   # 恢复列表视图与 2c 的筛选状态
+    at.sidebar.text_input(key="global_search").set_value("E2E测试物品")
+    at.sidebar.text_input(key="global_tag_filter").set_value("端到端")
+    at.run()
+    assert len(at.exception) == 0, at.exception
+    at.session_state["detail_item_id"] = item_id   # 回到步骤 3 注入的详情页状态
+    at.run()
+    assert len(at.exception) == 0, at.exception
+
     # ---- 4. 详情页点"✏️ 编辑" → 编辑页渲染 ----
     btn = find_button(at, label_exact="✏️ 编辑")
     assert btn is not None, "详情页无编辑按钮"
@@ -241,6 +268,17 @@ def main():
 
     # ---- 6.5 列表视图工具栏：常驻表格下方，未选中时禁用 + 提示（与 UI 设计一致） ----
     # 回归保护：工具栏按钮在列表视图中直接可定位（不滚动、不等二次 rerun）。
+    # 2e 卡片段切过视图：无 key radio 跨语言切换按旧 index 恢复，可能停在卡片态；
+    # 且列表需非空才有未选中提示 → 先显式回列表视图并清空筛选再验证工具栏。
+    if len(at.tabs[0].radio) == 1 and str(getattr(at.tabs[0].radio[0], "value", "")) != "List":
+        at.tabs[0].radio[0].set_value("List")
+        at.run()
+        assert len(at.exception) == 0, at.exception
+    at.sidebar.text_input(key="global_search").set_value("")
+    at.sidebar.text_input(key="global_tag_filter").set_value("")
+    at.run()
+    assert len(at.exception) == 0, at.exception
+    assert len(at.tabs[0].radio) == 1, "列表视图缺失（radio 不在）"
     # 「View Details」需恰好选中 1 行才 enabled；AppTest 无法模拟表格行选中，
     # 因此这里验证 disabled 态按钮存在 + 未选中提示（info）已渲染；若历史状态
     # 恰好有选中（enabled），点击进入详情也不应崩溃。

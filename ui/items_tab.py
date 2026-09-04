@@ -24,18 +24,18 @@ except Exception:  # 版本变动时退回 st.image 满宽显示
 _DETAIL_IMG_MAX_H = 300
 
 
-def _detail_image_url(abs_path, img_id):
+def _media_original_url(abs_path, tag):
     """返回 media 存储中的原图 URL：media_file_mgr.add(路径) 按文件原字节入库
     （内容哈希去重），服务端不做任何重编码，右键“新标签页打开图像”即原图。
-    失败返回 None 由调用方兜底。img_id（数字）拼坐标键，不能带盘符/路径字符。"""
+    失败返回 None 由调用方兜底。tag 为纯 ASCII 坐标键（不能带盘符/路径字符）。"""
     if _st_get_instance is None:
         return None
     try:
         mgr = _st_get_instance().media_file_mgr
         mime, _ = mimetypes.guess_type(abs_path)
-        return mgr.add(abs_path, mime or "image/jpeg", f"detail_img_{img_id}")
+        return mgr.add(abs_path, mime or "image/jpeg", tag)
     except Exception as e:
-        db.logger.warning("取详情图原图 URL 失败: %r", e, exc_info=True)
+        db.logger.warning("取原图 URL 失败: %r", e, exc_info=True)
         return None
 
 
@@ -255,7 +255,7 @@ def render_detail_page(conn, item, container_options):
                 gallery.append('<span style="color:#888;font-size:0.85em;padding:6px 0">'
                                + i18n.t("items.image_missing") + '</span>')
                 continue
-            url = _detail_image_url(path, img_id)
+            url = _media_original_url(path, f"detail_img_{img_id}")
             if url:
                 gallery.append(f'<img src="{url}" alt="" style="{_detail_img_style(single)}">')
             else:
@@ -445,7 +445,17 @@ def render_card_view(conn, df_all, total_items):
             with cols[idx % 4]:
                 img = first_imgs.get(row['id'])
                 if img and os.path.exists(img):
-                    st.image(img, use_container_width=True)
+                    # 卡片首图与详情页缩略图同规格：HTML img + CSS 限高，走 media
+                    # 原图 URL（st.image 满列宽会把竖图撑得过高，且服务端重编码）
+                    url = _media_original_url(img, f"card_img_{int(row['id'])}")
+                    if url:
+                        st.markdown(
+                            f'<img src="{url}" alt="" style="display:block;max-width:100%;'
+                            f'max-height:{_DETAIL_IMG_MAX_H}px;width:auto;height:auto;'
+                            f'margin:0 auto;border-radius:8px">',
+                            unsafe_allow_html=True)
+                    else:
+                        st.image(img, use_container_width=True)
                 else:
                     st.image("https://via.placeholder.com/150?text=No+Image", use_container_width=True)
 

@@ -10,10 +10,18 @@ Phase 6 新增：
 （repo.get_container_options），本模块变更容器后仅 st.rerun() 即可刷新全局下拉框。
 """
 import os
+import mimetypes
 import streamlit as st
 import db
 import repo
 import i18n
+
+try:
+    from streamlit.runtime import get_instance as _st_get_instance
+except Exception:  # 版本变动时退回 st.image 满宽显示
+    _st_get_instance = None
+
+_CARD_IMG_MAX_H = 300   # 卡片首图高度上限，与物品详情页缩略图规格一致
 
 
 @st.dialog("⚠️")
@@ -377,6 +385,27 @@ def render_browse(conn, containers_df):
 
 # ==================== 卡片视图（Phase 6） ====================
 
+
+def _card_img_markdown(img_path, tag):
+    """容器卡片首图 HTML：media 原图 URL + CSS 限高（_CARD_IMG_MAX_H），与物品
+    详情页缩略图同规格；st.image 满列宽会把竖图撑得过高且服务端重编码。
+    失败返回 None，由调用方退回 st.image。tag 为纯 ASCII 坐标键。"""
+    if _st_get_instance is None:
+        return None
+    try:
+        mgr = _st_get_instance().media_file_mgr
+        mime, _ = mimetypes.guess_type(img_path)
+        url = mgr.add(img_path, mime or "image/jpeg", tag)
+    except Exception as e:
+        db.logger.warning("取容器卡片原图 URL 失败: %r", e, exc_info=True)
+        return None
+    if not url:
+        return None
+    return (f'<img src="{url}" alt="" style="display:block;max-width:100%;'
+            f'max-height:{_CARD_IMG_MAX_H}px;width:auto;height:auto;'
+            f'margin:0 auto;border-radius:8px">')
+
+
 def render_card_view(conn, containers_df):
     """卡片视图：4 列网格（首图 + 名称 + 位置 + 物品数），点击进详情。"""
     total = len(containers_df)
@@ -412,7 +441,11 @@ def render_card_view(conn, containers_df):
             with cols[idx % 4]:
                 img = first_imgs.get(row['id'])
                 if img and os.path.exists(img):
-                    st.image(img, use_container_width=True)
+                    html = _card_img_markdown(img, f"ccard_img_{int(row['id'])}")
+                    if html:
+                        st.markdown(html, unsafe_allow_html=True)
+                    else:
+                        st.image(img, use_container_width=True)
                 else:
                     st.image("https://via.placeholder.com/150?text=No+Image", use_container_width=True)
 
