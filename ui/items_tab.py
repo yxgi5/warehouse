@@ -2,6 +2,7 @@
 """Tab1 物品浏览：列表/卡片双视图 + 详情页 + 编辑模式（含图片管理）。"""
 import os
 import base64
+import mimetypes
 from datetime import date
 import streamlit as st
 import db
@@ -9,30 +10,40 @@ import repo
 import i18n
 
 try:
-    from PIL import Image as _PILImage
-except Exception:  # Pillow 缺失时退回满宽显示
-    _PILImage = None
+    from streamlit.runtime import get_instance as _st_get_instance
+except Exception:  # 版本变动时退回 st.image 满宽显示
+    _st_get_instance = None
 
 
-# ==================== 详情图片尺寸 ====================
-# 详情页图片若按列宽 1:1 显示，竖图（手机照片 3:4/9:16）高度会远超一屏。
-# 竖图按高度上限等比换算显示宽度（横图高度天然小于上限，继续满列宽）。
-# st.image 只能按宽度缩放，没有 max-height 能力，故用 PIL 读取真实尺寸计算。
+# ==================== 详情图片显示 ====================
+# 显示尺寸用 CSS 约束（竖图高度上限 _DETAIL_IMG_MAX_H，等比缩放；横图高度
+# 天然小于上限，宽度撑满列）。img 的 src 指向 media 存储里的原始文件：
+# st.image(width=) 会经 image_to_url 在服务端重编码（正数宽度=缩放，负数
+# 也会把超宽图压到容器上限），右键“在新标签页打开图像”拿到的是小图；
+# media_file_mgr.add(路径) 按原字节入库（内容哈希去重），URL 即原图。
 _DETAIL_IMG_MAX_H = 300
 
 
-def _detail_img_width(path):
-    """返回限制高度后的显示宽度；横图/方图返回 None 表示满列宽显示。"""
-    if _PILImage is None:
-        return None
+def render_detail_image(abs_path, img_id):
+    """详情页单图：HTML <img> 限高显示原图；失败返回 False 由调用方退回 st.image。
+    img_id（数字）拼坐标/缓存键：不能带盘符/路径字符。"""
+    if _st_get_instance is None:
+        return False
     try:
-        with _PILImage.open(path) as im:  # 惰性读文件头，不解码全图
-            w, h = im.size
-    except Exception:
-        return None
-    if w >= h:
-        return None
-    return round(_DETAIL_IMG_MAX_H * w / h)
+        mgr = _st_get_instance().media_file_mgr
+        mime, _ = mimetypes.guess_type(abs_path)
+        url = mgr.add(abs_path, mime or "image/jpeg", f"detail_img_{img_id}")
+    except Exception as e:
+        db.logger.warning("render_detail_image 取原图 URL 失败: %r", e, exc_info=True)
+        return False
+    if not url:
+        return False
+    st.markdown(
+        f'<img src="{url}" alt="" style="display:block;max-width:100%;'
+        f'max-height:{_DETAIL_IMG_MAX_H}px;width:auto;height:auto;'
+        f'margin:0 auto;border-radius:8px">',
+        unsafe_allow_html=True)
+    return True
 
 
 # ==================== 删除对话框 ====================
@@ -237,10 +248,8 @@ def render_detail_page(conn, item, container_options):
         for idx, (img_id, path, _order) in enumerate(img_rows):
             with cols[idx % 4]:
                 if os.path.exists(path):
-                    w_px = _detail_img_width(path)
-                    if w_px:
-                        st.image(path, width=w_px)  # 竖图：限制高度，一屏内可纵览全部
-                    else:
+                    if not render_detail_image(path, img_id):
+                        # 取原图 URL 失败（异常/无运行时）时退回 st.image 满宽显示
                         st.image(path, use_container_width=True)
                 else:
                     st.caption(i18n.t("items.image_missing"))

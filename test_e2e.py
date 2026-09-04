@@ -18,6 +18,7 @@ _BASE = os.path.dirname(os.path.abspath(__file__))
 os.chdir(_BASE)
 sys.path.insert(0, _BASE)
 from streamlit.testing.v1 import AppTest
+import repo
 
 
 def find_button(container, label_exact=None, label_contains=None):
@@ -44,6 +45,9 @@ def main():
     # ---- 1. 新增物品表单填表提交（每个控件仅 set 一次） ----
     conn = sqlite3.connect("warehouse.db")
     conn.execute("PRAGMA foreign_keys=ON")
+    # 预清理历史残留：上次异常中断退出会留下 E2E 物品，否则重跑时编号冲突
+    for rid in [r[0] for r in conn.execute("SELECT id FROM items WHERE item_no LIKE 'E2E_%'")]:
+        repo.delete_item(conn, rid)
     # 编号/容器/购买日期三个字段都在，但默认不给内容：编号空、容器=占位未选、
     # 日期靠默认勾选"无购买日期"留空（date_input 原生无空态）
     assert str(at.text_input(key="draft_item_no").value) == "", "编号不应预填"
@@ -102,7 +106,6 @@ def main():
     print("✅ 标签'端到端'精确命中（UI 链路）")
 
     # ---- 2b. 不误匹配验证（repo 层，DB 逻辑） ----
-    import repo
     none_hit = repo.get_filtered_data(conn, "", "端到端回归")
     assert not any(r["item_no"] == "E2E_ITEM_001" for r in none_hit.to_dict("records")), "标签'端到端回归'误匹配!"
     print("✅ 标签'端到端回归'不误匹配（repo 层精确查询）")
@@ -199,6 +202,12 @@ def main():
     assert len(at.exception) == 0, at.exception
     assert at.session_state["detail_item_id"] == peer_b, "共用图按钮未跳转到 E2E_IMG_B"
     # E2E_IMG_B 详情：图下提示 A、关联区提示 E2E_ITEM_001，均可跳
+    # 详情页图片必须走 HTML <img>（src 指向原图媒体 URL）——若退回 st.image
+    # 满宽 fallback，markdown 里不会有 <img 标签。注意 AppTest 环境 URL 前缀是
+    # /mock/media/，真实运行时是 /media/，故只断言 <img src 与 /media/ 片段
+    assert any("<img src=" in str(getattr(m, "value", "")) and "/media/" in str(getattr(m, "value", ""))
+               for m in at.tabs[0].markdown), "详情页图片未走原图 URL 渲染"
+    print("✅ 详情页图片指向原图媒体 URL（右键新标签打开为原始尺寸）")
     btn_a2 = find_button(at, label_exact="E2E_IMG_A")
     assert btn_a2 is not None, "E2E_IMG_B 图下缺 E2E_IMG_A 按钮"
     back_link = find_button(at, label_exact="E2E_ITEM_001 E2E测试物品")
