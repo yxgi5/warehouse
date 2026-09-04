@@ -65,9 +65,11 @@ def start_edit(conn, item_id, container_options):
         return
     st.session_state.edit_item_no = item['item_no']
     st.session_state.edit_name = item['name']
+    # 无容器的物品选中"未归档"占位（下拉首项，保存为 None），编辑不会悄悄挪进第一个容器
     cur_name = next((n for n, cid in container_options.items() if cid == item['container_id']),
-                    list(container_options.keys())[0])
+                    i18n.t("items.unfiled"))
     st.session_state.edit_container_name = cur_name
+    st.session_state.edit_no_date = not bool(item['purchase_date'])
     st.session_state.edit_purchase_date = (date.fromisoformat(item['purchase_date'])
                                            if item['purchase_date'] else date.today())
     st.session_state.edit_platform = item['platform']
@@ -91,9 +93,13 @@ def render_edit_mode(conn, item_data, container_options):
         with col1:
             item_no = st.text_input(i18n.t("form.item_no"), key="edit_item_no")
             name = st.text_input(i18n.t("form.name"), key="edit_name")
-            container_name = st.selectbox(i18n.t("form.container"), list(container_options.keys()),
+            # "未归档"占位在首项：无容器物品可继续留空，也可随时改挂容器
+            cont_opts = [i18n.t("items.unfiled")] + list(container_options.keys())
+            container_name = st.selectbox(i18n.t("form.container"), cont_opts,
                                           key="edit_container_name")
-            purchase_date = st.date_input(i18n.t("form.purchase_date"), key="edit_purchase_date")
+            no_date = st.checkbox(i18n.t("items.edit_no_date"), key="edit_no_date")
+            purchase_date = st.date_input(i18n.t("form.purchase_date"), key="edit_purchase_date",
+                                          disabled=no_date)
         with col2:
             platform = st.text_input(i18n.t("form.platform"), key="edit_platform")
             order_no = st.text_input(i18n.t("form.order_no"), key="edit_order_no")
@@ -122,10 +128,10 @@ def render_edit_mode(conn, item_data, container_options):
             else:
                 try:
                     repo.update_item(conn, item_data['id'], item_no, name,
-                                     container_options[container_name],
-                                     purchase_date.strftime('%Y-%m-%d'), platform, order_no,
-                                     price, features, description, tags, uploaded_files,
-                                     repo.parse_related_text(related_items))
+                                     container_options.get(container_name),   # 未归档占位 → None
+                                     '' if no_date else purchase_date.strftime('%Y-%m-%d'),
+                                     platform, order_no, price, features, description, tags,
+                                     uploaded_files, repo.parse_related_text(related_items))
                     st.session_state.edit_item_id = None
                     st.toast(i18n.t("items.updated"), icon="🎉")
                     st.rerun()
@@ -175,7 +181,8 @@ def render_edit_mode(conn, item_data, container_options):
 # ==================== 详情页 ====================
 
 def render_detail_page(conn, item, container_options):
-    container_name = next((n for n, cid in container_options.items() if cid == item['container_id']), None)
+    container_name = next((n for n, cid in container_options.items() if cid == item['container_id']),
+                          i18n.t("items.unfiled"))
 
     col1, col2, col3, col4 = st.columns([1, 6, 1, 1])
     with col1:
@@ -239,7 +246,7 @@ def render_detail_page(conn, item, container_options):
         st.write(f"{i18n.t('items.f_item_no')}: {item['item_no']}")
         st.write(f"{i18n.t('items.f_name')}: {item['name']}")
         st.write(f"{i18n.t('items.f_container')}: {container_name}")
-        st.write(f"{i18n.t('items.f_purchase_date')}: {item['purchase_date']}")
+        st.write(f"{i18n.t('items.f_purchase_date')}: {item['purchase_date'] or i18n.t('items.not_set')}")
     with col2:
         st.write(f"{i18n.t('items.f_platform')}: {item['platform']}")
         st.write(f"{i18n.t('items.f_order_no')}: {item['order_no']}")
@@ -381,7 +388,7 @@ def render_card_view(conn, df_all, total_items):
 
                 st.subheader(row['name'])
                 st.caption(f"📌 {row['item_no']}")
-                st.caption(f"📦 {row['container_name']}")
+                st.caption(f"📦 {row['container_name'] or i18n.t('items.unfiled')}")
                 if row['tags']:
                     st.caption(f"🏷️ {row['tags']}")
 

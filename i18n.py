@@ -112,6 +112,8 @@ TRANSLATIONS = {
         "items.f_order_no": "**订单号**",
         "items.f_price": "**价格**",
         "items.not_set": "未设置",
+        "items.unfiled": "(未归档)",
+        "items.edit_no_date": "无购买日期",
         "items.f_tags": "**标签**",
         "items.f_features": "**特点**",
         "items.f_description": "**附加说明**",
@@ -137,7 +139,7 @@ TRANSLATIONS = {
 
         # ==================== 新增物品 ====================
         "add.title": "📝 录入新物品",
-        "add.item_no": "ITEM 编号 *（自动生成，可修改）",
+        "add.item_no": "ITEM 编号 *",
         "add.upload_images": "上传图片 (支持多张)",
         "add.save": "💾 保存物品",
         "add.item_no_exists": "编号 {item_no} 已存在，请修改编号",
@@ -332,6 +334,8 @@ TRANSLATIONS = {
         "items.f_order_no": "**Order No.**",
         "items.f_price": "**Price**",
         "items.not_set": "Not set",
+        "items.unfiled": "(Unfiled)",
+        "items.edit_no_date": "No purchase date",
         "items.f_tags": "**Tags**",
         "items.f_features": "**Features**",
         "items.f_description": "**Description**",
@@ -357,7 +361,7 @@ TRANSLATIONS = {
 
         # ==================== Add item ====================
         "add.title": "📝 Add New Item",
-        "add.item_no": "ITEM No. * (auto-generated, editable)",
+        "add.item_no": "ITEM No. *",
         "add.upload_images": "Upload images (multiple)",
         "add.save": "💾 Save Item",
         "add.item_no_exists": "Item No. {item_no} already exists, please change it",

@@ -62,6 +62,12 @@ def main():
     # 保存成功应打开新物品详情（detail_item_id 指向新物品；AppTest 不执行切 Tab 的 JS）
     assert at.session_state["detail_item_id"] == item_id, at.session_state["detail_item_id"]
     print("✅ 保存成功自动打开新物品详情")
+    # 添加表单不再收集容器/购买日期：新物品默认未归档、无日期
+    meta = conn.execute("SELECT container_id, purchase_date FROM items WHERE id=?",
+                        (item_id,)).fetchone()
+    assert meta == (None, ""), f"新增默认未归档/无日期: {meta}"
+    assert len(at.tabs[5].selectbox) == 0, "添加表单不应再出现容器选择"
+    print("✅ 新增默认未归档/无日期（添加表单已移除容器与日期）")
     # 复位详情状态回到列表视图，供后续标签筛选/搜索的表格断言
     at.session_state["detail_item_id"] = None
     at.run()
@@ -103,7 +109,9 @@ def main():
     # 详情是浏览态延伸：此时点其它 Tab 必须正常渲染（子页面不得 st.stop() 截断脚本）
     assert len(at.tabs[5].text_input) > 0, "详情页下 Add 页空白（st.stop 截断了脚本）"
     assert len(at.tabs[6].radio) >= 1, "详情页下 Containers 页空白（st.stop 截断了脚本）"
-    print("✅ 详情页渲染 0 异常，其它 Tab 同轮正常渲染")
+    assert any("未归档" in str(getattr(m, "value", "")) for m in at.tabs[0].markdown), \
+        "详情页容器行应显示未归档"
+    print("✅ 详情页渲染 0 异常，其它 Tab 正常，容器行显示未归档")
 
     # ---- 3b. 造两件共用同一张图（同字节内容）的物品：UI 无法上传文件，走 repo 层 ----
     cid2 = conn.execute("SELECT container_id FROM items WHERE id=?", (item_id,)).fetchone()[0]
@@ -150,6 +158,11 @@ def main():
                   (min(item_id, peer_b), max(item_id, peer_b))}
     assert got_pairs == want_pairs, got_pairs
     print("✅ 编辑保存关联编号 → item_links 落库（无向单行 a<b）")
+    # 编辑页未归档/无日期为合法状态：保存后仍应保持 None/空（编辑不得悄悄挪进第一容器/填今天）
+    meta2 = conn.execute("SELECT container_id, purchase_date FROM items WHERE id=?",
+                         (item_id,)).fetchone()
+    assert meta2 == (None, ""), f"编辑保存后仍应未归档/无日期: {meta2}"
+    print("✅ 编辑保存保持未归档/无日期")
 
     # ---- 4c. 详情页关联区与图下共用提示的跳转闭环 ----
     # E2E_ITEM_001（无图）详情：关联区列出两件，点按钮切到对方详情

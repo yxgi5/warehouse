@@ -80,6 +80,12 @@ def main():
                        "", "", 0.0, "", "", "", [])
     check("add_item 返回自增 id", i3 == i1 + 2, f"{i1},{i3}")
 
+    iu = repo.add_item(conn, "ITEM_20260820_092", "未归档物", None, "", "", "", 0, "", "", "", [])
+    iu_data = repo.load_item_by_id(conn, iu)
+    check("无容器无日期物品可保存（添加表单不再强制归档/填日期）",
+          iu_data['container_id'] is None and not iu_data['purchase_date'],
+          f"{iu_data['container_id']} | {iu_data['purchase_date']}")
+
     check("编号唯一校验", repo.item_no_exists(conn, "ITEM_20260820_001") is True)
     check("编号唯一校验 exclude_id 排除自身",
           repo.item_no_exists(conn, "ITEM_20260820_001", exclude_id=i1) is False)

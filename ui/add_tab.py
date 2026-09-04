@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Tab6 新增物品：录入表单（自动编号 + 标签 + 多图）+ CSV 批量导入。"""
-from datetime import date
+"""Tab6 新增物品：录入表单（手动编号 + 标签 + 多图）+ CSV 批量导入。"""
 import pandas as pd
 import streamlit as st
 import db
@@ -13,14 +12,11 @@ def render(conn, container_options):
         st.subheader(i18n.t("add.title"))
         col1, col2 = st.columns(2)
         with col1:
-            # widget 状态只能在实例化前写入：保存成功后置 draft_advance 再 rerun，
-            # 在这里（实例化前）统一消费该标记，刷新为下一个编号
-            if st.session_state.pop('draft_advance', False) or 'draft_item_no' not in st.session_state:
-                st.session_state.draft_item_no = db.next_item_no(conn)
+            # 编号由用户自行输入，不再预填自动编号（真实使用中多为自有编号如 A0330）；
+            # 自动编号 next_item_no 保留给 CSV 导入等场景。容器与购买日期不在添加表单
+            # 出现：新物品默认"未归档/无日期"，需要时在详情页点"编辑"补充。
             item_no = st.text_input(i18n.t("add.item_no"), key="draft_item_no")
             name = st.text_input(i18n.t("form.name"))
-            container_name = st.selectbox(i18n.t("form.container"), list(container_options.keys()))
-            purchase_date = st.date_input(i18n.t("form.purchase_date"), value=date.today())
         with col2:
             platform = st.text_input(i18n.t("form.platform"))
             order_no = st.text_input(i18n.t("form.order_no"))
@@ -40,14 +36,12 @@ def render(conn, container_options):
                 st.error(i18n.t("add.item_no_exists", item_no=item_no))
             else:
                 try:
-                    item_id = repo.add_item(conn, item_no, name, container_options[container_name],
-                                            purchase_date.strftime('%Y-%m-%d'), platform, order_no,
-                                            price, features, description, tags, uploaded_files,
-                                            repo.parse_related_text(related_items))
+                    item_id = repo.add_item(conn, item_no, name, None, "",
+                                            platform, order_no, price, features, description,
+                                            tags, uploaded_files, repo.parse_related_text(related_items))
                     # 保存成功：跳到物品 Tab 并直接打开新物品详情，用户立刻看到录入结果
                     st.session_state.detail_item_id = item_id
                     st.session_state.goto_tab = 0   # 0 = items Tab（st.tabs 顺序），app.py 顶层一次性消费
-                    st.session_state.draft_advance = True   # 非 widget 键，可随时写；rerun 后于实例化前刷新编号
                     st.toast(i18n.t("add.saved", item_no=item_no), icon="🎉")
                     st.rerun()
                 except Exception as e:
