@@ -101,8 +101,9 @@ def render(conn, search, tag_filter):
             count = item_counts.get(cid, 0)
             name = html.escape(str(row["name"]))
             location = html.escape(str(row.get("location") or ""))
-            has_children = bool((containers_df["parent_id"] == cid).any())
-            icon = "🗂️" if has_children else "📦"
+            # 图标统一 📦：容器实体在各处一致（详情标题/卡片占位/树行），
+            # 不再按是否有子容器区分 🗂️/📦 两态
+            icon = "📦"
             loc_html = f'<span class="tree-loc">📍 {location}</span>' if location else ""
 
             line = f'{prefix}{branch}'
