@@ -463,15 +463,23 @@ def container_name_exists(conn, name, exclude_id=None):
     return c.fetchone()[0] > 0
 
 
-def add_container(conn, name, parent_id, location):
-    conn.execute("INSERT INTO containers (name, parent_id, location) VALUES (?, ?, ?)",
-                 (name, parent_id, location))
+def add_container(conn, name, parent_id, location, uploaded_files=None):
+    """新增容器；可随表单携带照片（可选，与物品新增一致）。返回新容器 id。"""
+    cur = conn.execute("INSERT INTO containers (name, parent_id, location) VALUES (?, ?, ?)",
+                       (name, parent_id, location))
+    cid = cur.lastrowid
+    if uploaded_files:
+        save_container_images(conn, cid, uploaded_files)
     conn.commit()
+    return cid
 
 
-def update_container(conn, cid, name, parent_id, location):
+def update_container(conn, cid, name, parent_id, location, uploaded_files=None):
+    """更新容器基本信息；可随表单追加照片（可选）。失败时整体回滚。"""
     conn.execute("UPDATE containers SET name=?, parent_id=?, location=? WHERE id=?",
                  (name, parent_id, location, cid))
+    if uploaded_files:
+        save_container_images(conn, cid, uploaded_files)
     conn.commit()
 
 

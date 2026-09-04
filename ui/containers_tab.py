@@ -2,9 +2,9 @@
 """Tab7 容器管理：树形容器的增删改 + 表格/卡片双视图 + 容器详情页（照片/物品清单）。
 
 Phase 6 新增：
-- 容器照片：container_images 独立表，详情页内上传/删除/排序；
+- 容器照片：container_images 独立表，编辑表单内上传/删除/排序（与物品编辑一致）；
 - 浏览视图：表格（含批量操作）↔ 卡片（首图+信息，点击进详情）；
-- 详情页：多图画廊 + 信息区 + 内部物品清单（点击跳转物品浏览标签的详情页）。
+- 详情页：只读多图画廊 + 信息区 + 内部物品清单（点击跳转物品浏览标签的详情页）。
 
 注意：容器列表不再在本 Tab 内重复重建——app.py 顶层每次 rerun 统一查询一次
 （repo.get_container_options），本模块变更容器后仅 st.rerun() 即可刷新全局下拉框。
@@ -97,6 +97,12 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
         with col2:
             new_location = st.text_input(i18n.t("containers.location"), value=current_location)
 
+        # 照片随表单提交上传（新增/编辑均可，与物品表单一致）
+        uploaded_files = st.file_uploader(i18n.t("containers.upload_images"),
+                                          type=['jpg', 'png', 'jpeg', 'gif'],
+                                          accept_multiple_files=True,
+                                          key="container_upload_files")
+
         # 按钮布局：三列（更新/添加、取消、删除【仅编辑】）
         col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
         with col_btn1:
@@ -120,10 +126,12 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
             else:
                 try:
                     if is_edit:
-                        repo.update_container(conn, cont_id, new_name, new_parent_id, new_location)
+                        repo.update_container(conn, cont_id, new_name, new_parent_id,
+                                              new_location, uploaded_files)
                         saved_msg = i18n.t("containers.saved_updated", name=new_name)
                     else:
-                        repo.add_container(conn, new_name, new_parent_id, new_location)
+                        repo.add_container(conn, new_name, new_parent_id,
+                                           new_location, uploaded_files)
                         saved_msg = i18n.t("containers.saved_added", name=new_name)
                     st.toast(saved_msg, icon="✅")
                     st.session_state.edit_container_id = None
@@ -144,6 +152,42 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
                 st.error(i18n.t("containers.not_empty", n=item_count, m=child_count))
             else:
                 confirm_container_delete(conn, [cont_id], current_name)
+
+    # 已有照片管理区（仅编辑；放表单外，避免按钮触发表单提交丢数据——与物品编辑一致）
+    if is_edit:
+        img_rows = repo.load_container_images_full(conn, cont_id)
+        if img_rows:
+            st.write(i18n.t("items.existing_images"))
+            for idx, (img_id, abs_path, _order) in enumerate(img_rows):
+                col_img, col_up, col_down, col_del = st.columns([3, 1, 1, 1])
+                with col_img:
+                    if os.path.exists(abs_path):
+                        st.image(abs_path, width=120)
+                    else:
+                        st.caption(i18n.t("items.image_missing"))
+                with col_up:
+                    if idx > 0:
+                        if st.button(i18n.t("items.img_up"), key=f"cedit_img_up_{img_id}",
+                                     use_container_width=True):
+                            repo.move_container_image(conn, img_id, "up")
+                            st.rerun()
+                    else:
+                        st.button(i18n.t("items.img_up"), key=f"cedit_img_up_{img_id}_d",
+                                  disabled=True, use_container_width=True)
+                with col_down:
+                    if idx < len(img_rows) - 1:
+                        if st.button(i18n.t("items.img_down"), key=f"cedit_img_down_{img_id}",
+                                     use_container_width=True):
+                            repo.move_container_image(conn, img_id, "down")
+                            st.rerun()
+                    else:
+                        st.button(i18n.t("items.img_down"), key=f"cedit_img_down_{img_id}_d",
+                                  disabled=True, use_container_width=True)
+                with col_del:
+                    if st.button(i18n.t("items.img_del"), key=f"cedit_img_del_{img_id}",
+                                 use_container_width=True):
+                        repo.delete_container_image(conn, img_id)
+                        st.rerun()
 
 
 # ==================== 容器详情页（Phase 6） ====================
@@ -246,54 +290,6 @@ def render_detail_page(conn, containers_df, cid):
                 confirm_container_delete(conn, [cid], name)
 
     render_detail_readonly(conn, containers_df, cid, exit_key="container_detail_id", key_prefix="cd")
-
-    # 照片管理区（上传 + 已有图删除/排序）
-    st.divider()
-    st.write(i18n.t("containers.upload_images"))
-    uploaded = st.file_uploader(i18n.t("containers.upload_images"),
-                                type=['jpg', 'png', 'jpeg', 'gif'],
-                                accept_multiple_files=True, key="container_img_upload")
-    if uploaded:
-        try:
-            repo.save_container_images(conn, cid, uploaded)
-            st.rerun()
-        except Exception as e:
-            db.logger.exception("保存容器照片失败")
-            st.error(i18n.t("containers.op_fail", err=e))
-            conn.rollback()
-
-    img_rows = repo.load_container_images_full(conn, cid)
-    if img_rows:
-        st.write(i18n.t("items.existing_images"))
-        for idx, (img_id, abs_path, _order) in enumerate(img_rows):
-            col_img, col_up, col_down, col_del = st.columns([3, 1, 1, 1])
-            with col_img:
-                if os.path.exists(abs_path):
-                    st.image(abs_path, width=120)
-                else:
-                    st.caption(i18n.t("items.image_missing"))
-            with col_up:
-                if idx > 0:
-                    if st.button(i18n.t("items.img_up"), key=f"cimg_up_{img_id}", use_container_width=True):
-                        repo.move_container_image(conn, img_id, "up")
-                        st.rerun()
-                else:
-                    st.button(i18n.t("items.img_up"), key=f"cimg_up_{img_id}_d", disabled=True,
-                              use_container_width=True)
-            with col_down:
-                if idx < len(img_rows) - 1:
-                    if st.button(i18n.t("items.img_down"), key=f"cimg_down_{img_id}", use_container_width=True):
-                        repo.move_container_image(conn, img_id, "down")
-                        st.rerun()
-                else:
-                    st.button(i18n.t("items.img_down"), key=f"cimg_down_{img_id}_d", disabled=True,
-                              use_container_width=True)
-            with col_del:
-                if st.button(i18n.t("items.img_del"), key=f"cimg_del_{img_id}", use_container_width=True):
-                    repo.delete_container_image(conn, img_id)
-                    st.rerun()
-    else:
-        st.caption(i18n.t("common.no_images"))
 
 
 # ==================== 表格视图 ====================
@@ -406,6 +402,17 @@ def _card_img_markdown(img_path, tag):
             f'margin:0 auto;border-radius:8px">')
 
 
+def _no_image_markdown(label):
+    """无图卡片本地占位块（替代外链 placeholder——离线/墙内会显示破图）：
+    灰底圆角 + 图标 + 文案，与物品卡片占位一致。"""
+    return (f'<div style="display:flex;flex-direction:column;align-items:center;'
+            f'justify-content:center;height:140px;border-radius:8px;gap:4px;'
+            f'background:rgba(128,128,128,0.10);color:rgba(128,128,128,0.75);'
+            f'font-size:0.85em">'
+            f'<span style="font-size:32px;line-height:1">📦</span>'
+            f'<span>{label}</span></div>')
+
+
 def render_card_view(conn, containers_df):
     """卡片视图：4 列网格（首图 + 名称 + 位置 + 物品数），点击进详情。"""
     total = len(containers_df)
@@ -447,7 +454,9 @@ def render_card_view(conn, containers_df):
                     else:
                         st.image(img, use_container_width=True)
                 else:
-                    st.image("https://via.placeholder.com/150?text=No+Image", use_container_width=True)
+                    # 无图卡片渲染本地占位块，不请求外链 placeholder（离线/墙内破图）
+                    st.markdown(_no_image_markdown(i18n.t("common.no_images")),
+                                unsafe_allow_html=True)
 
                 st.subheader(row['name'])
                 if row['location']:

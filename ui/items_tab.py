@@ -48,6 +48,17 @@ def _detail_img_style(single):
             "border-radius:8px" % _DETAIL_IMG_MAX_H)
 
 
+def _no_image_markdown(label):
+    """无图卡片本地占位块（替代外链 placeholder——离线/墙内会显示破图）：
+    灰底圆角 + 图标 + 文案，高度与常见横图缩略图相当。"""
+    return (f'<div style="display:flex;flex-direction:column;align-items:center;'
+            f'justify-content:center;height:140px;border-radius:8px;gap:4px;'
+            f'background:rgba(128,128,128,0.10);color:rgba(128,128,128,0.75);'
+            f'font-size:0.85em">'
+            f'<span style="font-size:32px;line-height:1">📦</span>'
+            f'<span>{label}</span></div>')
+
+
 # ==================== 删除对话框 ====================
 # 注意：@st.dialog 的 title 参数在模块 import 时求值一次，不能直接用 i18n.t()
 # （语言切换不重载模块）。因此标题用静态 emoji，语言化标题在 dialog 内部渲染。
@@ -457,7 +468,9 @@ def render_card_view(conn, df_all, total_items):
                     else:
                         st.image(img, use_container_width=True)
                 else:
-                    st.image("https://via.placeholder.com/150?text=No+Image", use_container_width=True)
+                    # 无图卡片渲染本地占位块，不请求外链 placeholder（离线/墙内破图）
+                    st.markdown(_no_image_markdown(i18n.t("common.no_images")),
+                                unsafe_allow_html=True)
 
                 st.subheader(row['name'])
                 st.caption(f"📌 {row['item_no']}")

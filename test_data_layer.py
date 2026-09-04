@@ -384,6 +384,19 @@ def main():
     n1 = repo.save_container_images(conn, cd, [fake_upload("c1.jpg"), fake_upload("c2.jpg")])
     n2 = repo.save_container_images(conn, cd, [fake_upload("c3.jpg")])
     check("save_container_images 追加张数", n1 == 2 and n2 == 1, f"{n1},{n2}")
+    # add_container / update_container 随表单带照片（与物品编辑一致：照片随提交保存）
+    cid_newadd = repo.add_container(conn, "Box_D04b", None, "床上层",
+                                    [fake_upload("c_add1.jpg"), fake_upload("c_add2.jpg")])
+    check("add_container 带照片入库 2 张",
+          len(repo.load_container_images_full(conn, cid_newadd)) == 2)
+    repo.update_container(conn, cid_newadd, "Box_D04b_改", None, "床顶层",
+                          [fake_upload("c_up1.jpg")])
+    check("update_container 带照片追加 1 张",
+          len(repo.load_container_images_full(conn, cid_newadd)) == 3)
+    check("update_container 改名生效",
+          repo.get_container(conn, cid_newadd)[1] == "Box_D04b_改")
+    repo.delete_containers(conn, [cid_newadd])
+    check("带照片 add/update 容器删除清理", repo.get_container(conn, cid_newadd) is None)
     cpaths = repo.load_container_images(conn, cd)
     check("load_container_images 3 张绝对路径", len(cpaths) == 3 and all(os.path.isabs(p) for p in cpaths))
     cfull = repo.load_container_images_full(conn, cd)

@@ -316,7 +316,56 @@ def main():
     assert at.session_state["container_detail_id"] is not None, "容器详情未打开"
     sub_headers = [str(getattr(h, "value", "")) for h in at.tabs[6].subheader]
     assert any("Container Details" in v for v in sub_headers), f"详情页标题缺失: {sub_headers}"
-    print("✅ 容器详情页渲染 0 异常（含照片区/物品清单）")
+    print("✅ 容器详情页渲染 0 异常（照片管理已移至编辑表单）")
+    # st.write 的文本在 AppTest 树中落点为 markdown 元素；详情页只读展示，
+    # 不再渲染照片管理区。详情页 Edit → 编辑表单，表单外的既有照片管理区
+    # （上移/下移/删除）仅编辑模式渲染。AppTest 元素树不支持 file_uploader
+    # （也无法模拟上传），改用文案/按钮断言。
+    writes = [str(getattr(m, "value", "")) for m in at.tabs[6].markdown]
+    assert not any("Upload container photos" in v for v in writes), \
+        f"详情页不应再有照片管理区: {writes}"
+    # 用 repo 层造带 2 张图的容器驱动「编辑表单含照片管理区」断言
+    conn_c = sqlite3.connect("warehouse.db")
+    conn_c.execute("PRAGMA foreign_keys=ON")
+    try:
+        pre = [r[0] for r in conn_c.execute(
+            "SELECT id FROM containers WHERE name='E2E_CTR_IMG'")]
+        if pre:
+            repo.delete_containers(conn_c, pre)
+        cid_c = repo.add_container(conn_c, "E2E_CTR_IMG", None, "e2e",
+                                   [types.SimpleNamespace(name="a.jpg", getbuffer=lambda: img_x),
+                                    types.SimpleNamespace(name="b.jpg", getbuffer=lambda: img_x)])
+        at.session_state["container_detail_id"] = cid_c
+        at.run()
+        assert len(at.exception) == 0, at.exception
+        writes = [str(getattr(m, "value", "")) for m in at.tabs[6].markdown]
+        assert any("Container Photos" in v for v in writes), f"详情画廊标题缺失: {writes}"
+        assert not any("Upload container photos" in v for v in writes), \
+            f"详情页不应再有照片管理区: {writes}"
+        edit_btn2 = find_button(at.tabs[6], label_contains="Edit")
+        assert edit_btn2 is not None, "容器详情页缺编辑按钮"
+        edit_btn2.click()
+        at.run()
+        assert len(at.exception) == 0, at.exception
+        subs = [str(getattr(h, "value", "")) for h in at.tabs[6].subheader]
+        assert any("Edit Container" in v for v in subs), f"编辑表单未打开: {subs}"
+        writes = [str(getattr(m, "value", "")) for m in at.tabs[6].markdown]
+        assert any("Existing images" in v for v in writes), f"编辑表单缺既有照片管理区: {writes}"
+        assert find_button(at.tabs[6], label_exact="⬆️ Up") is not None, "缺照片上移按钮"
+        assert find_button(at.tabs[6], label_exact="🗑️ Delete") is not None, "缺照片删除按钮"
+        cancel_btn = find_button(at.tabs[6], label_contains="Cancel")
+        assert cancel_btn is not None, "容器编辑表单缺取消按钮"
+        cancel_btn.click()
+        at.run()
+        assert len(at.exception) == 0, at.exception
+        assert at.session_state["container_detail_id"] == cid_c, "取消后应回容器详情"
+        print("✅ 容器照片管理位于编辑表单：详情页无管理区，编辑表单含上传/排序/删除")
+    finally:
+        left = [r[0] for r in conn_c.execute(
+            "SELECT id FROM containers WHERE name='E2E_CTR_IMG'")]
+        if left:
+            repo.delete_containers(conn_c, left)   # 连带删除照片文件与记录
+        conn_c.close()
 
     # 恢复浏览状态
     at.session_state["container_detail_id"] = None
