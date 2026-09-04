@@ -406,18 +406,8 @@ def render_card_view(conn, df_all, total_items):
 # ==================== Tab 入口 ====================
 
 def render(conn, search, tag_filter, container_options):
-    # 子视图切换（内部值用稳定 list/card，显示文本按语言翻译）
-    mode_labels = [i18n.t("items.view_list"), i18n.t("items.view_card")]
-    current_mode = st.session_state.view_mode if st.session_state.view_mode in ("list", "card") else "list"
-    mode_choice = st.radio(i18n.t("items.switch_view"), mode_labels, horizontal=True,
-                           index=0 if current_mode == "list" else 1)
-    st.session_state.view_mode = "list" if mode_choice == mode_labels[0] else "card"
-
-    # 获取数据（用传入的 tag_filter，与 sidebar 同步后的 session_state 保持一致）
-    df_all = repo.get_filtered_data(conn, search, tag_filter)
-    total_items = len(df_all)
-
-    # 详情模式
+    # 详情/编辑是子页面：优先渲染并 stop，避免浏览态控件（视图切换 radio、
+    # 列表/卡片）出现在详情/编辑页顶部
     if st.session_state.detail_item_id is not None:
         item = repo.load_item_by_id(conn, st.session_state.detail_item_id)
         if item is None:
@@ -428,7 +418,6 @@ def render(conn, search, tag_filter, container_options):
         render_detail_page(conn, item, container_options)
         st.stop()
 
-    # 编辑模式
     if st.session_state.edit_item_id is not None:
         item_data = repo.load_item_by_id(conn, st.session_state.edit_item_id)
         if not item_data:
@@ -438,6 +427,17 @@ def render(conn, search, tag_filter, container_options):
             st.stop()
         render_edit_mode(conn, item_data, container_options)
         st.stop()
+
+    # --- 浏览态：子视图切换（内部值用稳定 list/card，显示文本按语言翻译）---
+    mode_labels = [i18n.t("items.view_list"), i18n.t("items.view_card")]
+    current_mode = st.session_state.view_mode if st.session_state.view_mode in ("list", "card") else "list"
+    mode_choice = st.radio(i18n.t("items.switch_view"), mode_labels, horizontal=True,
+                           index=0 if current_mode == "list" else 1)
+    st.session_state.view_mode = "list" if mode_choice == mode_labels[0] else "card"
+
+    # 获取数据（用传入的 tag_filter，与 sidebar 同步后的 session_state 保持一致）
+    df_all = repo.get_filtered_data(conn, search, tag_filter)
+    total_items = len(df_all)
 
     # --- 列表视图 ---
     if st.session_state.view_mode == "list":

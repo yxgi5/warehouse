@@ -92,10 +92,14 @@ def main():
     assert "E2E_ITEM_001" in set(dfv2["item_no"]), f"搜索名称未命中: {dfv2['item_no'].tolist()}"
     print("✅ 全字段搜索命中名称（UI 链路）")
 
+    # ---- 2d. 浏览态顶部有列表/卡片切换（子页面里不应再出现，见 3/4 步） ----
+    assert len(at.tabs[0].radio) == 1, "浏览态缺少列表/卡片切换 radio"
+
     # ---- 3. 详情页渲染（注入 detail_item_id，等价于用户点开详情） ----
     at.session_state["detail_item_id"] = item_id
     at.run()
     assert len(at.exception) == 0, at.exception
+    assert len(at.tabs[0].radio) == 0, "详情页不应出现列表/卡片切换 radio"
     print("✅ 详情页渲染 0 异常")
 
     # ---- 3b. 造两件共用同一张图（同字节内容）的物品：UI 无法上传文件，走 repo 层 ----
@@ -123,6 +127,7 @@ def main():
     assert len(at.exception) == 0, at.exception
     edit_texts = [str(getattr(t, "value", "")) for t in at.text_input]
     assert any("E2E_ITEM_001" in v for v in edit_texts), "编辑表单未带出编号"
+    assert len(at.tabs[0].radio) == 0, "编辑页不应出现列表/卡片切换 radio"
     print("✅ 编辑页渲染 0 异常，编号已带出")
 
     # ---- 4b. 编辑表单录入“关联物品编号”（整体校验通过）→ 提交落库 item_links ----
@@ -133,8 +138,12 @@ def main():
     at.run()
     assert len(at.exception) == 0, at.exception
     assert len(at.error) == 0, [str(getattr(e, "value", "")) for e in at.error]
-    pairs = sorted(conn.execute("SELECT a_id, b_id FROM item_links").fetchall())
-    assert pairs == sorted([(item_id, peer_a), (item_id, peer_b)]), pairs
+    # 只断言与本次物品相关的行（真实库可能有用户自己的关联数据）
+    got_pairs = {tuple(r) for r in conn.execute(
+        "SELECT a_id, b_id FROM item_links WHERE a_id=? OR b_id=?", (item_id, item_id))}
+    want_pairs = {(min(item_id, peer_a), max(item_id, peer_a)),
+                  (min(item_id, peer_b), max(item_id, peer_b))}
+    assert got_pairs == want_pairs, got_pairs
     print("✅ 编辑保存关联编号 → item_links 落库（无向单行 a<b）")
 
     # ---- 4c. 详情页关联区与图下共用提示的跳转闭环 ----
@@ -166,12 +175,12 @@ def main():
     assert at.session_state["detail_item_id"] == item_id, "关联区按钮未跳回 E2E_ITEM_001"
     print("✅ 详情页关联区/共用图下按钮双向跳转闭环")
 
-    # ---- 5. 清理测试数据（走唯一删除入口）----
+    # ---- 5. 清理测试数据（走唯一删除入口；只删 E2E 测试物品，不碰用户数据）----
     repo.delete_item(conn, peer_a)
     repo.delete_item(conn, peer_b)
     repo.delete_item(conn, item_id)
-    assert conn.execute("SELECT COUNT(*) FROM item_links").fetchone()[0] == 0, \
-        "删除物品后 item_links 残留"
+    assert conn.execute("SELECT COUNT(*) FROM item_links WHERE a_id=? OR b_id=?",
+                        (item_id, item_id)).fetchone()[0] == 0, "删除物品后 item_links 残留"
     conn.close()
     print("✅ 测试数据已清理（含 item_links 级联清空）")
 
