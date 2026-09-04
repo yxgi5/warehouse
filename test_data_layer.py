@@ -121,6 +121,18 @@ def main():
     tag_names = {r[0] for r in conn.execute("SELECT name FROM tags")}
     check("孤儿标签'水果'已被清理", "水果" not in tag_names, str(tag_names))
 
+    # ---------- 中文分隔符：表单标签录入兼容 中文逗号/分号（与 CSV 导入一致） ----------
+    i4 = repo.add_item(conn, "ITEM_20260820_090", "分隔符物", cid, "2026-04-04",
+                       "", "", 0.0, "", "", "电子，配件;游戏；怀旧", [])
+    check("add 中文逗号/分号标签拆分",
+          repo.load_item_by_id(conn, i4)['tags'] == "电子,配件,游戏,怀旧",
+          repo.load_item_by_id(conn, i4)['tags'])
+    repo.update_item(conn, i4, "ITEM_20260820_090", "分隔符物", cid, "2026-04-04",
+                     "", "", 0.0, "", "", "数码，充电器", [])
+    check("update 中文逗号标签拆分",
+          repo.load_item_by_id(conn, i4)['tags'] == "数码,充电器",
+          repo.load_item_by_id(conn, i4)['tags'])
+
     # ---------- 图片管理 ----------
     imgs = repo.load_images_by_item(conn, i1)
     check("load_images_by_item 返回绝对路径", len(imgs) == 2 and all(os.path.isabs(p) for p in imgs))

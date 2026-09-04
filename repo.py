@@ -268,8 +268,10 @@ def load_image_peers(conn, item_id):
 
 
 def set_item_tags(conn, item_id, tags_str):
-    """写物品标签：重建关联（先删后插），并清理无任何物品使用的孤儿标签。"""
+    """写物品标签：重建关联（先删后插），并清理无任何物品使用的孤儿标签。
+    分隔符在此统一规范化（中文逗号/分号等 → 英文逗号），表单与 CSV 导入共用此入口。"""
     c = conn.cursor()
+    tags_str = _norm_tags(tags_str)
     c.execute("DELETE FROM item_tags WHERE item_id=?", (item_id,))
     for tag in (t.strip() for t in tags_str.split(',') if t.strip()):
         c.execute("INSERT OR IGNORE INTO tags (name) VALUES (?)", (tag,))
