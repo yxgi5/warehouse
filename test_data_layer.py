@@ -359,6 +359,15 @@ def main():
     dup_rows, _ = repo.parse_import_csv(fake_upload("dup.csv", dup_csv), container_map)
     ok_n2, imp_errs2 = repo.import_items(conn, dup_rows)
     check("import_items 重复编号记 error 不中断", ok_n2 == 1 and len(imp_errs2) == 1, f"ok={ok_n2} errs={imp_errs2}")
+    # 真实行号：解析阶段跳过的坏行不使导入阶段行号偏移（评审 P2-⑪）
+    mix_csv = (f"item_no,name,container,purchase_date,platform,order_no,price,features,description,tags\n"
+               f",,{cname},,,,0,,,,\n"  # 第 2 行：缺名称（解析跳过）
+               f"{new_items.iloc[0]['item_no']},撞号行,{cname},,,,0,,,,\n").encode("utf-8")  # 第 3 行
+    mix_rows, mix_errs = repo.parse_import_csv(fake_upload("mix.csv", mix_csv), container_map)
+    check("真实行号：解析跳过缺名坏行", len(mix_rows) == 1 and len(mix_errs) == 1, str(mix_errs))
+    _, mix_imp_errs = repo.import_items(conn, mix_rows)
+    check("真实行号：导入错误定位到第 3 行", len(mix_imp_errs) == 1 and mix_imp_errs[0][0] == 3,
+          str(mix_imp_errs))
 
     # ---------- 容器 CRUD ----------
     repo.add_container(conn, "Box_C03", None, "衣柜上层")
@@ -517,6 +526,39 @@ def main():
         rejected = True
     check("迁移后外键 RESTRICT 生效", rejected)
     oc.close()
+
+    # ---------- 半迁移自愈：migrate 中断（表仅改名为 *_old）后 init_db 续迁 ----------
+    # 评审 P1-④：rename→create→copy→drop 任一步中断都会留半迁移态，重启须自动续迁
+    broken_db = os.path.join(tmp, "broken.db")
+    bc = sqlite3.connect(broken_db)
+    bc.execute("CREATE TABLE containers (id INTEGER PRIMARY KEY, name TEXT UNIQUE, parent_id INTEGER, location TEXT)")
+    bc.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, item_no TEXT UNIQUE, name TEXT, container_id INTEGER, "
+               "purchase_date TEXT, platform TEXT, order_no TEXT, price REAL, features TEXT, description TEXT, tags TEXT)")
+    bc.execute("CREATE TABLE images (id INTEGER PRIMARY KEY, item_id INTEGER, file_path TEXT, sort_order INTEGER)")
+    bc.execute("INSERT INTO containers VALUES (1, 'Broken_Box', NULL, '残')")
+    bc.execute("INSERT INTO items VALUES (1, 'BROKEN01', '中断物', 1, '2025-06-01', '', '', 1.0, '', '', '')")
+    bc.execute("INSERT INTO images VALUES (1, 1, 'b_pic.jpg', 0)")
+    # 模拟中断点：三组仅完成 rename（多步迁移的第一步），新表/拷贝/清理均未做
+    for t_ in ("containers", "items", "images"):
+        bc.execute(f"ALTER TABLE {t_} RENAME TO {t_}_old")
+    bc.commit()
+    bc.close()
+    db.DB_PATH = broken_db
+    b2 = sqlite3.connect(broken_db)
+    b2.execute("PRAGMA foreign_keys=ON")
+    db.init_db(b2)
+    check("半迁移自愈：数据全部恢复",
+          b2.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 1
+          and b2.execute("SELECT COUNT(*) FROM containers").fetchone()[0] == 1)
+    check("半迁移自愈：_old 残留清理干净",
+          not (db._has_table(b2, "containers_old") or db._has_table(b2, "items_old")
+               or db._has_table(b2, "images_old")))
+    check("半迁移自愈：外键重建",
+          len(b2.execute("PRAGMA foreign_key_list(items)").fetchall()) >= 1)
+    check("半迁移自愈：图片经池化保留归属",
+          b2.execute("SELECT COUNT(*) FROM images WHERE file_path='b_pic.jpg'").fetchone()[0] == 1
+          and b2.execute("SELECT COUNT(*) FROM item_images").fetchone()[0] == 1)
+    b2.close()
 
     print(f"\n结果: {passed} 通过, {failed} 失败")
     sys.exit(0 if failed == 0 else 1)

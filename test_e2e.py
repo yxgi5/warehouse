@@ -45,9 +45,15 @@ def main():
     # ---- 1. 新增物品表单填表提交（每个控件仅 set 一次） ----
     conn = sqlite3.connect("warehouse.db")
     conn.execute("PRAGMA foreign_keys=ON")
-    # 预清理历史残留：上次异常中断退出会留下 E2E 物品，否则重跑时编号冲突
+    # 预清理历史残留：上次异常中断退出会留下 E2E 物品/容器，否则重跑时编号冲突
     for rid in [r[0] for r in conn.execute("SELECT id FROM items WHERE item_no LIKE 'E2E_%'")]:
         repo.delete_item(conn, rid)
+    for cid in [r[0] for r in conn.execute("SELECT id FROM containers WHERE name LIKE 'E2E_%'")]:
+        repo.delete_containers(conn, [cid])
+    # 空库保底（干净克隆无容器）：新增表单/3b/后续都要选容器 → 自建一个测试容器，
+    # 结束统一清理；有演示数据则直接复用（评审 P1-⑤：不硬编码容器名也不要求种子）
+    if conn.execute("SELECT COUNT(*) FROM containers").fetchone()[0] == 0:
+        repo.add_container(conn, "E2E_CTR_BASE", None, "e2e 保底")
     # 编号/容器/购买日期三个字段都在，但默认不给内容：编号空、容器=占位未选、
     # 日期靠默认勾选"无购买日期"留空（date_input 原生无空态）
     assert str(at.text_input(key="draft_item_no").value) == "", "编号不应预填"
@@ -423,6 +429,16 @@ def main():
     at.session_state["container_view_mode"] = "table"
     at.run()
     assert len(at.exception) == 0, at.exception
+
+    # 清理 e2e 自建的保底/测试容器（7 段的 E2E_CTR_IMG 已在其 finally 中删除）；
+    # 容器须为空才可删（物品 E2E_ 已在第 5 段清理），避免外键 RESTRICT 中断
+    conn_f = sqlite3.connect("warehouse.db")
+    conn_f.execute("PRAGMA foreign_keys=ON")
+    for cid_f in [r[0] for r in conn_f.execute("SELECT id FROM containers WHERE name LIKE 'E2E_%'")]:
+        if conn_f.execute("SELECT COUNT(*) FROM items WHERE container_id=?",
+                          (cid_f,)).fetchone()[0] == 0:
+            repo.delete_containers(conn_f, [cid_f])
+    conn_f.close()
 
     print("E2E RESULT: PASS")
 
