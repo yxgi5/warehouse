@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Tab7 容器管理：树形容器的增删改 + 表格/卡片双视图 + 容器详情页（照片/物品清单）。
+"""Tab7 容器管理：树形容器的增删改 + 列表/卡片双视图 + 容器详情页（照片/物品清单）。
 
 Phase 6 新增：
 - 容器照片：container_images 独立表，编辑表单内上传/删除/排序（与物品编辑一致）；
-- 浏览视图：表格（含批量操作）↔ 卡片（首图+信息，点击进详情）；
+- 浏览视图：列表（含批量操作）↔ 卡片（首图+信息，点击进详情）；
 - 详情页：只读多图画廊 + 信息区 + 内部物品清单（点击跳转物品浏览标签的详情页）。
 
 注意：容器列表不再在本 Tab 内重复重建——app.py 顶层每次 rerun 统一查询一次
@@ -327,10 +327,10 @@ def render_detail_page(conn, containers_df, cid):
     render_detail_readonly(conn, containers_df, cid, exit_key="container_detail_id", key_prefix="cd")
 
 
-# ==================== 表格视图 ====================
+# ==================== 列表视图 ====================
 
 def render_browse(conn, containers_df):
-    """表格视图：表格 + 工具栏（详情/编辑/删除/新增）。"""
+    """列表视图：表格 + 工具栏（详情/编辑/删除/新增）。命名与物品一致（list 视图）。"""
     df_display = containers_df.copy()
     df_display['parent_name'] = df_display['parent_id'].map(
         containers_df.set_index('id')['name'].to_dict()
@@ -350,7 +350,7 @@ def render_browse(conn, containers_df):
             "parent_name": i18n.t("containers.col_parent"),
             "location": i18n.t("containers.col_location")
         },
-        key="container_table"
+        key="container_list"
     )
 
     selected_indices = event.selection.rows
@@ -519,7 +519,7 @@ def render(conn):
     if 'container_detail_id' not in st.session_state:
         st.session_state.container_detail_id = None
     if 'container_view_mode' not in st.session_state:
-        st.session_state.container_view_mode = 'table'   # 'table' 或 'card'（内部值稳定，显示文本由 i18n 决定）
+        st.session_state.container_view_mode = 'list'   # 'list' 或 'card'（内部值稳定，显示文本由 i18n 决定）
 
     # 获取容器数据（实时，单次查询供本 Tab 使用）
     containers_df = repo.list_containers(conn)
@@ -540,14 +540,14 @@ def render(conn):
         render_detail_page(conn, containers_df, st.session_state.container_detail_id)
         return
 
-    # ========== 浏览模式：表格/卡片切换 ==========
-    mode_labels = [i18n.t("containers.view_table"), i18n.t("containers.view_card")]
-    current_mode = st.session_state.container_view_mode if st.session_state.container_view_mode in ("table", "card") else "table"
+    # ========== 浏览模式：列表/卡片切换（命名与物品一致：list 视图） ==========
+    mode_labels = [i18n.t("containers.view_list"), i18n.t("containers.view_card")]
+    current_mode = st.session_state.container_view_mode if st.session_state.container_view_mode in ("list", "card") else "list"
     mode_choice = st.radio(i18n.t("containers.switch_view"), mode_labels, horizontal=True,
-                           index=0 if current_mode == "table" else 1, key="container_view_radio")
-    st.session_state.container_view_mode = "table" if mode_choice == mode_labels[0] else "card"
+                           index=0 if current_mode == "list" else 1, key="container_view_radio")
+    st.session_state.container_view_mode = "list" if mode_choice == mode_labels[0] else "card"
 
-    if st.session_state.container_view_mode == "table":
+    if st.session_state.container_view_mode == "list":
         render_browse(conn, containers_df)
     else:
         render_card_view(conn, containers_df)

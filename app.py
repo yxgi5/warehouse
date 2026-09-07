@@ -37,9 +37,11 @@ st.markdown("""
     bottom: 0;
     left: var(--toolbar-left, 21rem);
     width: var(--toolbar-width, calc(100vw - 21rem));
-    background: var(--background-color, #ffffff);
-    /* 回退值用中性浅色：深色主题下 --background-color 正常注入（仅 JS/主题
-       异常路径才触发回退，避免浅色主题下工具栏突变成深色块） */
+    background: var(--toolbar-bg, #ffffff);
+    /* 背景不依赖 Streamlit 主题变量：自定义 <style> 作用域内 var(--background-color)
+       实测不解析、恒走回退值，浅色回退在深色主题下发白刺眼。故由下方 JS 读取
+       主内容区真实背景色实时写入 --toolbar-bg（与 left/width 同机制）；JS 异常
+       时最后兑底浅色。 */
     padding: 8px 0 4px;
     z-index: 1000;
     border-top: 1px solid rgba(128, 128, 128, 0.15);
@@ -86,6 +88,15 @@ components.html("""
             var r = main.getBoundingClientRect();
             doc.documentElement.style.setProperty('--toolbar-left', r.left + 'px');
             doc.documentElement.style.setProperty('--toolbar-width', r.width + 'px');
+            // 主区背景通常为透明（实色在 stApp 上）：沿父链取第一个非透明背景
+            var bg = window.getComputedStyle(main).backgroundColor;
+            var el = main;
+            while (el && (!bg || bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)')) {
+                el = el.parentElement;
+                if (!el) break;
+                bg = window.getComputedStyle(el).backgroundColor;
+            }
+            doc.documentElement.style.setProperty('--toolbar-bg', bg || '#ffffff');
         } catch (e) { /* 跨源等异常时静默，保留 CSS fallback */ }
     }
     sync();

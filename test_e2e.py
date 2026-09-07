@@ -375,7 +375,7 @@ def main():
 
     # 恢复浏览状态
     at.session_state["container_detail_id"] = None
-    at.session_state["container_view_mode"] = "table"
+    at.session_state["container_view_mode"] = "list"
     at.run()
     assert len(at.exception) == 0, at.exception
 
@@ -426,7 +426,7 @@ def main():
 
     # 恢复浏览状态
     at.session_state["container_detail_id"] = None
-    at.session_state["container_view_mode"] = "table"
+    at.session_state["container_view_mode"] = "list"
     at.run()
     assert len(at.exception) == 0, at.exception
 

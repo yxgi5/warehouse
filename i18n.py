@@ -202,7 +202,7 @@ TRANSLATIONS = {
         "containers.not_empty_list": "以下容器非空，不能删除：{list}",
         # ---- 容器图片/卡片视图/详情页（Phase 6） ----
         "containers.switch_view": "切换视图",
-        "containers.view_table": "表格",
+        "containers.view_list": "列表",
         "containers.view_card": "卡片",
         "containers.card_count": "共 {total} 个容器",
         "containers.card_items": "{n} 件物品",
@@ -426,7 +426,7 @@ TRANSLATIONS = {
         "containers.not_empty_list": "Containers below are not empty: {list}",
         # ---- Container photos / card view / detail page (Phase 6) ----
         "containers.switch_view": "View Mode",
-        "containers.view_table": "Table",
+        "containers.view_list": "List",
         "containers.view_card": "Cards",
         "containers.card_count": "{total} containers",
         "containers.card_items": "{n} items",
