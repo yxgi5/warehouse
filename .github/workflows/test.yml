@@ -24,6 +24,10 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
+      # 诊断：CI 失败若源于依赖漂移，日志首屏即可看到实际解析版本
+      - name: Show dependency versions
+        run: python -c "import streamlit, pandas, PIL; print('streamlit', streamlit.__version__, '| pandas', pandas.__version__)"
+
       - name: Compile check
         run: python -m py_compile app.py db.py repo.py i18n.py seed_demo_data.py ui/*.py
 
