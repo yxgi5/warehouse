@@ -4,6 +4,7 @@ import os
 import base64
 import mimetypes
 from datetime import date
+import pandas as pd
 import streamlit as st
 import db
 import repo
@@ -337,7 +338,10 @@ def render_detail_page(conn, item, container_options):
 
 def render_list_view(conn, df_all, total_items, container_options):
     df_display = df_all[['id', 'item_no', 'name', 'container_name', 'purchase_date', 'platform', 'price', 'tags']].copy()
-    df_display['price'] = df_display['price'].apply(lambda x: f"¥{x:.2f}" if x else "")
+    # NaN（库中 NULL 价格读入 pandas）与 0（表单默认值=未设置）都显示空串，
+    # 仅真实价格格式化（if x 会把 0.0 判空，但 NaN 是 truthy 会漏成 ¥nan）
+    df_display['price'] = df_display['price'].apply(
+        lambda x: f"¥{x:.2f}" if pd.notna(x) and x else "")
 
     # --- 表格（高度与容器列表一致：固定 300，不提供滑块）---
     # 表格先渲染，下方工具栏直接读 event.selection.rows 即本轮最新选中，

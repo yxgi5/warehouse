@@ -37,7 +37,9 @@ st.markdown("""
     bottom: 0;
     left: var(--toolbar-left, 21rem);
     width: var(--toolbar-width, calc(100vw - 21rem));
-    background: var(--background-color, #0e1117);
+    background: var(--background-color, #ffffff);
+    /* 回退值用中性浅色：深色主题下 --background-color 正常注入（仅 JS/主题
+       异常路径才触发回退，避免浅色主题下工具栏突变成深色块） */
     padding: 8px 0 4px;
     z-index: 1000;
     border-top: 1px solid rgba(128, 128, 128, 0.15);
@@ -119,11 +121,12 @@ if 'last_backup' not in st.session_state:
 if 'orphans' not in st.session_state:
     st.session_state.orphans = None
 
-# --- 数据库连接 + 建表/迁移 ---
+# --- 数据库连接 ---
 conn = get_conn()
-db.init_db(conn)
 
-# 每个会话只做一次自动备份（Streamlit 每次交互都会 rerun，不能放在顶层裸执行）
+# 每会话一次自动备份：放在 init_db（含旧库表结构迁移）之前 —— 迁移会重写表结构，
+# 备份必须是迁移前的完整快照（迁移中断可手动恢复）；首次全新库时 db 尚不存在，
+# backup_data 跳过 db 只打包 photos，无害。
 if not st.session_state.backup_done:
     try:
         st.session_state.last_backup = db.backup_data()
@@ -131,6 +134,9 @@ if not st.session_state.backup_done:
         db.logger.exception("自动备份失败")
         st.warning(i18n.t("app.backup_fail", err=e))
     st.session_state.backup_done = True
+
+# --- 建表/迁移 ---
+db.init_db(conn)
 
 # 孤儿图片记录扫描（会话内只查一次）
 if st.session_state.orphans is None:

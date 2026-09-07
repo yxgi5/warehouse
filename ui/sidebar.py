@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """侧边栏：语言切换、全局筛选、SQL 控制台、备份状态、孤儿图片清理。"""
 import os
+import sqlite3
 import pandas as pd
 import streamlit as st
 import db
@@ -33,7 +34,13 @@ def render(conn):
             sql_query = st.text_area(i18n.t("sidebar.sql_input"), "SELECT * FROM items LIMIT 10")
             if st.button(i18n.t("sidebar.sql_run")):
                 try:
-                    df = pd.read_sql_query(sql_query, conn)
+                    # 只读连接执行（mode=ro 由 SQLite 强制）：误输 DROP/DELETE/UPDATE
+                    # 直接报错，无法破坏数据；主连接供全应用读写，不给控制台碰
+                    ro = sqlite3.connect(f"file:{db.DB_PATH}?mode=ro", uri=True)
+                    try:
+                        df = pd.read_sql_query(sql_query, ro)
+                    finally:
+                        ro.close()
                     st.dataframe(df)
                 except Exception as e:
                     db.logger.exception("SQL 查询失败")

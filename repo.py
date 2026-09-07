@@ -8,6 +8,7 @@
 """
 import os
 import re
+import sqlite3
 import pandas as pd
 import db
 import i18n
@@ -341,6 +342,9 @@ def _remove_photo_file(path):
 def _move_owner_image(conn, table, owner_col, img_id, direction):
     """通用图片排序（容器照片专用）：table 仅取 'container_images'，owner_col 仅取
     'container_id'（内部白名单调用，无 SQL 注入风险）。"""
+    # 运行时白名单断言：杜绝未来误传其它表名/列名（防注入兜底）
+    assert (table, owner_col) == ("container_images", "container_id"), \
+        "排序仅支持容器图片（table/owner_col 白名单）"
     c = conn.cursor()
     c.execute(f"SELECT {owner_col}, sort_order FROM {table} WHERE id=?", (img_id,))
     row = c.fetchone()
@@ -361,6 +365,9 @@ def _move_owner_image(conn, table, owner_col, img_id, direction):
 
 def _delete_owner_image(conn, table, owner_col, img_id):
     """通用图片删除（容器照片专用，白名单同上）：先删文件，再删记录，重排连续化。"""
+    # 运行时白名单断言：杜绝未来误传其它表名/列名（防注入兜底）
+    assert (table, owner_col) == ("container_images", "container_id"), \
+        "删除仅支持容器图片（table/owner_col 白名单）"
     c = conn.cursor()
     c.execute(f"SELECT {owner_col}, file_path FROM {table} WHERE id=?", (img_id,))
     row = c.fetchone()
@@ -599,23 +606,37 @@ def parse_import_csv(uploaded_file, container_options):
             errors.append((line_no, i18n.t("import.err_price", val=d['price'])))
             continue
         d['tags'] = _norm_tags(d['tags'])
+        d['line_no'] = line_no   # 携带真实 CSV 行号（导入阶段错误定位用，解析跳过的坏行不偏移）
         rows.append(d)
     return rows, errors
 
 
 def import_items(conn, rows):
     """批量写入物品，逐行独立成败：编号重复/写入异常的行记 error，其余正常写入。
-    返回 (成功数, [(行号, 错误信息)])。item_no 为空的自动生成当日递增编号。"""
+    返回 (成功数, [(行号, 错误信息)])。item_no 为空的自动生成当日递增编号。
+    rows 由 parse_import_csv 产出（每行带真实 CSV 行号 line_no：解析阶段会跳过
+    坏行，按行列表下标推算的行号会偏移，无法对应原始文件）。"""
     ok, errors = 0, []
     for i, d in enumerate(rows):
-        line_no = i + 2
+        line_no = d.get('line_no', i + 2)   # 解析阶段带上的真实行号（历史直调兼容）
         item_no = d['item_no'] or db.next_item_no(conn)
-        try:
-            add_item(conn, item_no, d['name'], d['container_id'], d['purchase_date'],
-                     d['platform'], d['order_no'], d['price'], d['features'],
-                     d['description'], d['tags'], [])
-            ok += 1
-        except Exception as e:
-            db.logger.warning("CSV 导入第 %d 行失败(%s): %s", line_no, item_no, e)
-            errors.append((line_no, f"{item_no}: {e}"))
+        for attempt in range(2):
+            try:
+                add_item(conn, item_no, d['name'], d['container_id'], d['purchase_date'],
+                         d['platform'], d['order_no'], d['price'], d['features'],
+                         d['description'], d['tags'], [])
+                ok += 1
+                break
+            except sqlite3.IntegrityError as ie:
+                # 自动编号是「查当日最大号再插入」非原子：多会话并发导入可能撞号
+                # （items.item_no UNIQUE）→ 换新号重试一次；用户指定编号撞号仍记错
+                if attempt == 0 and not d['item_no']:
+                    item_no = db.next_item_no(conn)
+                    continue
+                err = ie
+            except Exception as exc:
+                err = exc
+            db.logger.warning("CSV 导入第 %d 行失败(%s): %r", line_no, item_no, err)
+            errors.append((line_no, f"{item_no}: {err}"))
+            break
     return ok, errors

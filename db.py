@@ -14,6 +14,7 @@ import uuid
 import zipfile
 import logging
 import logging.handlers
+import tempfile
 from datetime import date, datetime
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -114,38 +115,96 @@ def migrate_tags(conn):
     conn.commit()
 
 
-# 旧版表结构（无外键约束）升级为带外键的新结构，保留全部数据
+# 旧版表结构（无外键约束）升级为带外键的新结构，保留全部数据。
+# 迁移是 rename→create→copy→drop 的多步 DDL：SQLite 的 DDL 隐式提交、无法靠
+# rollback 撤销，任一步中断都会留下 *_old 半迁移状态。因此每组采用「先落数据
+# (commit) 再删旧表」+ 下次运行按状态续迁（重入自愈），中断后自动恢复而不卡死/
+# 丢数据；调用方（app.py）在 init_db 之前做整库备份，双重兜底。
+def _has_table(conn, name):
+    return conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+        (name,)).fetchone()[0] > 0
+
+
+def _table_count(conn, name):
+    """表行数（仅供内部迁移组函数使用，表名来自白名单常量）。"""
+    return conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
+
+
+def _migrate_group(conn, table, create_sql, copy_sql, final_col=None):
+    """把单张表迁移为带外键的新结构（幂等、可重入，容忍 *_old 残留）。
+
+    状态机（old = {table}_old；final_col 为列级终态信号——图片池表无外键，
+    无法单靠 foreign_key_list 判定，如池化 images 含 sha256 列）：
+    - 已是终态（表带 FK，或表含 final_col 列）：只清理中断残留的 *_old。
+      FK 版行数不足时补灌（上次 copy 未落库）；列级终态（图片池）数据自成
+      体系、不经 copy_sql 灌入，只清残留不补灌；
+    - *_old 存在而新表缺失：上次 rename 后建表失败 → 续建新表再补灌；
+    - 常规路径：rename 保数据 → 建新表 → 补灌 → 删旧表。
+    数据 commit 先于删旧表：任何中断点都有 *_old 可续迁，不丢数据。
+    """
+    old = f"{table}_old"
+    fks = conn.execute(f"PRAGMA foreign_key_list({table})").fetchall()
+    col_final = bool(final_col) and _has_table(conn, table) and any(
+        r[1] == final_col for r in conn.execute(f"PRAGMA table_info({table})"))
+    if fks or col_final:
+        # 已是终态结构：仅需处理 *_old 残留（上次 copy 后 drop 中断/未落库）
+        if _has_table(conn, old):
+            if fks and _table_count(conn, table) < _table_count(conn, old):
+                conn.execute(f"DELETE FROM {table}")
+                conn.execute(copy_sql)
+                conn.commit()   # 先落数据再清残留
+            conn.execute(f"DROP TABLE {old}")
+        return
+    if not _has_table(conn, table) and not _has_table(conn, old):
+        return   # 全新库：表由 init_db 的 CREATE IF NOT EXISTS 建好（直接带 FK）
+    if not _has_table(conn, old):
+        conn.execute(f"ALTER TABLE {table} RENAME TO {old}")   # 改名保数据
+    if not _has_table(conn, table):
+        conn.execute(create_sql)   # rename 后建表失败 → 续建
+    # 以 *_old 为源补灌（空表或行数不足），先落数据再删旧表
+    if _table_count(conn, table) < _table_count(conn, old):
+        if _table_count(conn, table):
+            conn.execute(f"DELETE FROM {table}")
+        conn.execute(copy_sql)
+        conn.commit()
+    conn.execute(f"DROP TABLE {old}")
+
+
 def migrate_schema(conn):
-    fks = conn.execute("PRAGMA foreign_key_list(items)").fetchall()
-    if fks:
-        return   # 已是新结构
+    """旧版无外键的 containers/items/images 升级为带外键新结构（保留全部数据）。
+
+    逐组可重入自愈：任一步中断后下次运行自动续迁（半迁移状态检测），不卡死；
+    与旧实现相比，混合状态（部分组已迁移）也可安全续完，而不是整体重跑报错。
+    """
     conn.execute("PRAGMA foreign_keys=OFF")
     try:
-        conn.execute("ALTER TABLE containers RENAME TO containers_old")
-        conn.execute('''CREATE TABLE containers (
-            id INTEGER PRIMARY KEY, name TEXT UNIQUE, parent_id INTEGER
-                REFERENCES containers(id) ON DELETE RESTRICT, location TEXT)''')
-        conn.execute("INSERT INTO containers (id, name, parent_id, location) SELECT id, name, parent_id, location FROM containers_old")
-        conn.execute("DROP TABLE containers_old")
-
-        conn.execute("ALTER TABLE items RENAME TO items_old")
-        conn.execute('''CREATE TABLE items (
-            id INTEGER PRIMARY KEY, item_no TEXT UNIQUE, name TEXT, container_id INTEGER
-                REFERENCES containers(id) ON DELETE RESTRICT,
-            purchase_date TEXT, platform TEXT, order_no TEXT, price REAL,
-            features TEXT, description TEXT, tags TEXT)''')
-        conn.execute('''INSERT INTO items (id, item_no, name, container_id, purchase_date,
-                        platform, order_no, price, features, description, tags)
-                        SELECT id, item_no, name, container_id, purchase_date,
-                        platform, order_no, price, features, description, tags FROM items_old''')
-        conn.execute("DROP TABLE items_old")
-
-        conn.execute("ALTER TABLE images RENAME TO images_old")
-        conn.execute('''CREATE TABLE images (
-            id INTEGER PRIMARY KEY, item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
-            file_path TEXT, sort_order INTEGER)''')
-        conn.execute("INSERT INTO images (id, item_id, file_path, sort_order) SELECT id, item_id, file_path, sort_order FROM images_old")
-        conn.execute("DROP TABLE images_old")
+        _migrate_group(
+            conn, "containers",
+            '''CREATE TABLE containers (
+                id INTEGER PRIMARY KEY, name TEXT UNIQUE, parent_id INTEGER
+                    REFERENCES containers(id) ON DELETE RESTRICT, location TEXT)''',
+            "INSERT INTO containers (id, name, parent_id, location) "
+            "SELECT id, name, parent_id, location FROM containers_old")
+        _migrate_group(
+            conn, "items",
+            '''CREATE TABLE items (
+                id INTEGER PRIMARY KEY, item_no TEXT UNIQUE, name TEXT, container_id INTEGER
+                    REFERENCES containers(id) ON DELETE RESTRICT,
+                purchase_date TEXT, platform TEXT, order_no TEXT, price REAL,
+                features TEXT, description TEXT, tags TEXT)''',
+            "INSERT INTO items (id, item_no, name, container_id, purchase_date, "
+            "platform, order_no, price, features, description, tags) "
+            "SELECT id, item_no, name, container_id, purchase_date, "
+            "platform, order_no, price, features, description, tags FROM items_old")
+        _migrate_group(
+            conn, "images",
+            '''CREATE TABLE images (
+                id INTEGER PRIMARY KEY, item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
+                file_path TEXT, sort_order INTEGER)''',
+            "INSERT INTO images (id, item_id, file_path, sort_order) "
+            "SELECT id, item_id, file_path, sort_order FROM images_old",
+            final_col="sha256")   # 池化终态无外键，按 sha256 列识别（勿再迁移）
         conn.commit()
     finally:
         conn.execute("PRAGMA foreign_keys=ON")
@@ -211,23 +270,52 @@ def next_item_no(conn):
     return f"{prefix}{max_seq + 1:03d}"
 
 
-# 启动时自动备份：db + photos 打包 zip，只保留最近 keep 份
+# 启动时自动备份：db + photos 打包 zip，只保留最近 keep 份。
+# db 先经 VACUUM INTO 生成一致性快照再入包：直接打包活跃 .db 文件在另一进程/
+# 实例并发写入时可能是中间态（单实例串行下风险极低，但快照无成本）；
+# SQLite <3.27 或快照失败时退回原文件直写。
+def _consistent_db_snapshot():
+    """VACUUM INTO 生成一致性 db 快照（临时文件）；失败返回 None 由调用方退直写。"""
+    try:
+        if sqlite3.sqlite_version_info < (3, 27):
+            return None
+        snap = os.path.join(tempfile.gettempdir(), f"wh_snap_{uuid.uuid4().hex}.db")
+        c = sqlite3.connect(DB_PATH)
+        try:
+            c.execute("VACUUM INTO ?", (snap,))
+        finally:
+            c.close()
+        return snap if os.path.exists(snap) else None
+    except Exception as e:
+        logger.warning("生成备份一致快照失败(退回直写): %r", e)
+        return None
+
+
 def backup_data(keep=10):
     os.makedirs(BACKUP_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     zip_path = os.path.join(BACKUP_DIR, f"backup_{ts}_{uuid.uuid4().hex[:4]}.zip")
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        if os.path.exists(DB_PATH):
-            zf.write(DB_PATH, "warehouse.db")
-        if os.path.isdir(PHOTOS_DIR):
-            for root, _, files in os.walk(PHOTOS_DIR):
-                for f in files:
-                    full = os.path.join(root, f)
-                    try:
-                        arc = os.path.relpath(full, BASE_DIR)
-                    except ValueError:
-                        arc = os.path.basename(full)   # photos 目录跨盘时退化为文件名
-                    zf.write(full, arc)
+    snap = None
+    try:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            if os.path.exists(DB_PATH):
+                snap = _consistent_db_snapshot()
+                if snap:
+                    zf.write(snap, "warehouse.db")
+                else:
+                    zf.write(DB_PATH, "warehouse.db")
+            if os.path.isdir(PHOTOS_DIR):
+                for root, _, files in os.walk(PHOTOS_DIR):
+                    for f in files:
+                        full = os.path.join(root, f)
+                        try:
+                            arc = os.path.relpath(full, BASE_DIR)
+                        except ValueError:
+                            arc = os.path.basename(full)   # photos 目录跨盘时退化为文件名
+                        zf.write(full, arc)
+    finally:
+        if snap and os.path.exists(snap):
+            os.remove(snap)
     backups = sorted(
         (f for f in os.listdir(BACKUP_DIR) if f.startswith("backup_") and f.endswith(".zip")),
         key=lambda f: os.path.getmtime(os.path.join(BACKUP_DIR, f)))
