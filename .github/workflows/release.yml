@@ -1,0 +1,21 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # tag 推送会同时触发 test.yml（同代依赖全量回归）；这里建 draft release，
+      # 由用户在 GitHub 上确认测试绿后手动 Publish —— 避免"未测先发"，
+      # 也无需跨 workflow 依赖。--generate-notes 自动生成提交变更清单。
+      - name: Draft GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --draft --generate-notes --title "$GITHUB_REF_NAME"

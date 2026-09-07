@@ -1,0 +1,44 @@
+name: tests
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Python 3.8 + requirements 原样解析：本地验证环境是 3.8/streamlit 1.40.x，
+      # pip 在 3.8 上会自动落在 streamlit 1.40.x 与 pandas 2.1.x —— e2e 按
+      # AppTest 1.40 边界编写，锁同代版本才能让 CI 结果与本地一致可信。
+      # （若未来 setup-python 停发 3.8，改 3.9 并显式补 streamlit==1.40.1）
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Compile check
+        run: python -m py_compile app.py db.py repo.py i18n.py seed_demo_data.py ui/*.py
+
+      # 数据层/i18n 用系统临时目录，不污染工作区（干净 clone 无 warehouse.db 也可跑）
+      - name: Data layer tests
+        run: python test_data_layer.py
+
+      - name: i18n tests
+        run: python test_i18n.py
+
+      # e2e 会经 AppTest 跑 app.py：空库自动 init_db + 生成首次备份 zip，
+      # 自建保底容器并 finally 清理 —— 顺序放在 smoke 前，为 smoke 的
+      # "backups/ 非空"断言铺好环境
+      - name: E2E tests
+        run: python test_e2e.py
+
+      - name: Smoke test
+        run: python smoke_test.py
