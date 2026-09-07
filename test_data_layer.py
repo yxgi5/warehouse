@@ -212,6 +212,16 @@ def main():
         check("save_shared_image 拒绝伪装文件", False, "未抛异常")
     except ValueError as e:
         check("save_shared_image 拒绝伪装文件", "不符" in str(e), str(e))
+    # save_shared_image 并发冲突分支的语义前提（评审 P2）：IGNORE 撞唯一索引被忽略时
+    # rowcount==0，而 lastrowid 仍指本连接上一次成功插入的行——代码以 rowcount 判断真插入
+    cur_pre = conn.execute("INSERT INTO images (file_path, sha256) VALUES ('_pre.jpg', 'PREHASH')")
+    last_before = cur_pre.lastrowid
+    cur_dup = conn.execute("INSERT OR IGNORE INTO images (file_path, sha256) VALUES ('_dup.jpg', 'PREHASH')")
+    check("IGNORE 冲突 rowcount=0 而 lastrowid 非 0",
+          cur_dup.rowcount == 0 and cur_dup.lastrowid == last_before,
+          f"rowcount={cur_dup.rowcount} lastrowid={cur_dup.lastrowid}")
+    conn.execute("DELETE FROM images WHERE sha256='PREHASH'")
+    conn.commit()
 
     # ---------- Phase 4: 图片 MIME 校验（save_uploaded_file） ----------
     png_ok = db.save_uploaded_file(fake_upload("ok.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 16), "MIME_PNG")

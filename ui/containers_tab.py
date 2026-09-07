@@ -24,6 +24,25 @@ except Exception:  # 版本变动时退回 st.image 满宽显示
 _CARD_IMG_MAX_H = 300   # 卡片首图高度上限，与物品详情页缩略图规格一致
 
 
+# ==================== 原图 URL（media 存储） ====================
+# 设计意图：画廊/卡片“查看缩小、右键打开的是原图”。st.image 会把图片在服务端
+# 重编码后再入库（图宽超 2×730 会压到 1460，格式不符会重压），右键拿到的是小图，
+# 因此统一走 media_file_mgr.add(路径) 按原字节入库，URL 即原图（与物品详情一致）。
+def _media_original_url(abs_path, tag):
+    """返回 media 存储中的原图 URL；失败返回 None（调用方退回 st.image）。
+    tag 为纯 ASCII 坐标键（media 缓存键，不能带盘符/路径字符）。"""
+    if _st_get_instance is None:
+        return None
+    try:
+        mgr = _st_get_instance().media_file_mgr
+        mime, _ = mimetypes.guess_type(abs_path)
+        url = mgr.add(abs_path, mime or "image/jpeg", tag)
+        return url or None
+    except Exception as e:
+        db.logger.warning("取原图 URL 失败: %r", e, exc_info=True)
+        return None
+
+
 @st.dialog("⚠️")
 def confirm_container_delete(conn, ids, names_text):
     st.subheader(i18n.t("containers.confirm_title"))
@@ -211,14 +230,30 @@ def render_detail_readonly(conn, containers_df, cid, exit_key, key_prefix="cd"):
 
     st.subheader(i18n.t("containers.detail_title", name=name))
 
-    # 多图画廊（只读展示）
+    # 多图画廊（只读展示）：与物品详情一致——查看缩小、右键打开的是原图。
+    # HTML img + media 原图 URL + CSS 限高（st.image 服务端重编码、右键非原图）；
+    # 取原图 URL 失败（异常/无运行时）时退回 st.image。tag 带容器 id，多详情同开不撞。
     img_paths = repo.load_container_images(conn, cid)
     if img_paths:
         st.write(i18n.t("containers.detail_images"))
-        cols = st.columns(min(4, len(img_paths)))
+        gallery, fallback = [], []
         for idx, path in enumerate(img_paths):
-            if os.path.exists(path):
-                cols[idx % 4].image(path, use_container_width=True)
+            if not os.path.exists(path):
+                gallery.append('<span style="color:#888;font-size:0.85em;padding:6px 0">'
+                               + i18n.t("items.image_missing") + '</span>')
+                continue
+            url = _media_original_url(path, f"cdetail_{cid}_{idx}")
+            if url:
+                gallery.append(f'<img src="{url}" alt="" style="max-height:{_CARD_IMG_MAX_H}px;'
+                               f'max-width:100%;width:auto;height:auto;border-radius:8px">')
+            else:
+                fallback.append(path)
+        if gallery:
+            # flex 左对齐紧凑排布（不用 st.columns 等宽网格：列占满整行拉开图距），超宽自动折行
+            st.markdown('<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start">'
+                        + "".join(gallery) + "</div>", unsafe_allow_html=True)
+        for path in fallback:
+            st.image(path, use_container_width=True)
     else:
         st.caption(i18n.t("common.no_images"))
 
@@ -384,17 +419,8 @@ def render_browse(conn, containers_df):
 
 def _card_img_markdown(img_path, tag):
     """容器卡片首图 HTML：media 原图 URL + CSS 限高（_CARD_IMG_MAX_H），与物品
-    详情页缩略图同规格；st.image 满列宽会把竖图撑得过高且服务端重编码。
-    失败返回 None，由调用方退回 st.image。tag 为纯 ASCII 坐标键。"""
-    if _st_get_instance is None:
-        return None
-    try:
-        mgr = _st_get_instance().media_file_mgr
-        mime, _ = mimetypes.guess_type(img_path)
-        url = mgr.add(img_path, mime or "image/jpeg", tag)
-    except Exception as e:
-        db.logger.warning("取容器卡片原图 URL 失败: %r", e, exc_info=True)
-        return None
+    详情页缩略图同规格；查看缩小、右键即原图。失败返回 None，由调用方退回 st.image。"""
+    url = _media_original_url(img_path, tag)
     if not url:
         return None
     return (f'<img src="{url}" alt="" style="display:block;max-width:100%;'

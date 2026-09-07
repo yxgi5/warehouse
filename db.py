@@ -431,7 +431,9 @@ def save_shared_image(conn, uploaded_file, prefix):
     cur = conn.cursor()
     cur.execute("INSERT OR IGNORE INTO images (file_path, sha256) VALUES (?, ?)",
                 (filename, digest))
-    if cur.lastrowid:
+    # rowcount>0 才是真插入：IGNORE 撞唯一索引被忽略时 rowcount=0，而 lastrowid 仍
+    # 指向本连接上一次成功插入的行——误判会写出库中无记录的孤儿文件并返回错误 image_id
+    if cur.rowcount:
         with open(os.path.join(PHOTOS_DIR, filename), "wb") as f:
             f.write(data)
         return cur.lastrowid

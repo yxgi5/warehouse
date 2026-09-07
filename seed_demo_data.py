@@ -28,11 +28,19 @@ import repo
 # ---------------- 图片生成 ----------------
 
 FONT_CANDIDATES = [
+    # Windows
     r"C:\Windows\Fonts\msyh.ttc",      # 微软雅黑
     r"C:\Windows\Fonts\msyhbd.ttc",
     r"C:\Windows\Fonts\simhei.ttf",    # 黑体
     r"C:\Windows\Fonts\simsun.ttc",    # 宋体
-]
+    # Linux（常见发行版中文字体，找不到时逐级跳过）
+    r"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    r"/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+    r"/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+    # macOS
+    r"/System/Library/Fonts/PingFang.ttc",
+    r"/Library/Fonts/Arial Unicode.ttf",
+]  # 全平台都找不到时 find_font 退回 load_default（评审 P2：跨平台候选，不硬绑 Windows）
 
 
 def find_font(size, bold=False):
