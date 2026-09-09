@@ -54,6 +54,11 @@ def main():
     # 结束统一清理；有演示数据则直接复用（评审 P1-⑤：不硬编码容器名也不要求种子）
     if conn.execute("SELECT COUNT(*) FROM containers").fetchone()[0] == 0:
         repo.add_container(conn, "E2E_CTR_BASE", None, "e2e 保底")
+        # 容器写库后必须立即刷新元素树：AppTest 校验 selectbox 的 value 必须在其
+        # options 内（旧渲染只有占位符），否则首次 at.run() 抛 ValueError:
+        # 'E2E_CTR_BASE' is not in list（CI 实测；本地 1.40.1 不校验，新版才拦）
+        at.run()
+        assert len(at.exception) == 0, at.exception
     # 编号/容器/购买日期三个字段都在，但默认不给内容：编号空、容器=占位未选、
     # 日期靠默认勾选"无购买日期"留空（date_input 原生无空态）
     assert str(at.text_input(key="draft_item_no").value) == "", "编号不应预填"
