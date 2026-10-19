@@ -79,6 +79,14 @@ python -m streamlit run app.py
 - **容器树行内装饰**：树行改用 HTML 渲染——等宽字体字符画连接线（`├─ └─ │`）+ 🗂️/📦 图标（有子容器/叶子）+ 数量徽标（`color-mix` 取主题色）+ 📍位置 + hover 高亮；缩进用 `margin-left` 按深度递增，保留详情按钮原生交互。
 - **列表高度**：表格固定 300px（列表内部滚动）；fixed 工具栏不依赖滚动，任何页面长度下都常驻视口底部。
 
+## 容器附注与新增入口收进物品 Tab（Phase 7）
+
+- **容器附注**：`containers` 表新增 `note` 文本列（旧库 `ALTER TABLE ADD COLUMN` 幂等迁移，历史容器附注为空）。编辑/新增容器表单在「上级容器 / 位置」之下、「上传容器照片」之上增加整行附注多行框（与物品表单的特点/附加说明同规格）；容器详情页信息区下方整行展示附注（空则显示「无 / None」）。
+- **新增物品入口收进「物品浏览」Tab**：原独立 Tab「➕ 新增物品」取消，改为物品 Tab 浏览态顶部的「➕ Add Item」按钮（列表/卡片视图均常驻可见）——从其他 Tab 不应直接进入新增页，否则会覆盖当前浏览状态、造成逻辑混乱。新增表单 + CSV 批量导入作为 `add_item_mode` 子页面渲染（与详情/编辑子页面同级，表单带「取消」按钮），保存成功后在本 Tab 内直接打开新物品详情。
+- **随之移除的机制**：新增保存后的 `goto_tab` 跨 Tab 跳转（JS 模拟点击 Tab 按钮）失去使用者，已从 `app.py` 删除；`app.tab.add` 文案 key 同步移除；Tab 数 7 → 6（容器管理为最后一个 Tab，index 5）。
+- **演示数据**：`seed_demo_data.py` 的 34 个容器均带一句附注（用途 / 找物提示）。
+- **测试**：`test_data_layer.py` 覆盖附注读写与旧库补列迁移；`test_e2e.py` 覆盖「点入口 → 填表 → 保存 → 本 Tab 打开详情」新链路与附注的 UI 录入/落库/展示/重进带回，并新增 AppTest 1.40 边界辅助 `prune_dead_widgets`（表单提交后 app 主动 `st.rerun()` 切走时，树里会残留已卸载的输入控件节点、其 widget state 已被清理，不摘掉下一轮 `run()` 收集状态会 KeyError）。
+
 ## 提交规范（Git Convention）
 
 - **前缀**：统一 Conventional Commits——`feat / fix / refactor / chore / docs / style / test`，带 scope 更佳，如 `feat(i18n)`。
@@ -111,7 +119,7 @@ python -m streamlit run app.py
 
 ```bash
 python smoke_test.py      # AppTest 真实执行 app.py，验证无异常
-python test_data_layer.py # 数据层单测 76 项（建表/迁移/标签/图片/删除/备份/搜索/CSV导入/MIME/容器图片）
+python test_data_layer.py # 数据层单测 127 项（建表/迁移/标签/图片/删除/备份/搜索/CSV导入/MIME/容器图片/容器附注）
 python test_i18n.py       # i18n 单测 17 项（双语言 key 集一致/无空值/format/语言联动）
 python test_e2e.py        # 端到端回归（新增→筛选→搜索→详情→编辑→清理→语言切换→容器卡片/详情，全 UI 链路）
 ```

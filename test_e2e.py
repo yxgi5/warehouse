@@ -31,6 +31,31 @@ def find_button(container, label_exact=None, label_contains=None):
     return None
 
 
+def prune_dead_widgets(node):
+    """摘除 AppTest 树中"已卸载但仍残留"的控件节点（测试辅助，不影响 app 行为）。
+
+    AppTest 1.40 边界：app 在表单提交后主动 st.rerun() 切到别的子页面时，上一轮的
+    表单控件已不在新页面渲染，Streamlit 会清掉它们的 widget state；但 AppTest 建树时
+    Block 互相覆盖会让新 Block 继承旧 Block 的子节点，残留的输入类控件节点仍挂在树上
+    ——下一轮 run() 收集 widget 状态时读 state 即 KeyError（按钮/上传框不读 state，
+    不受影响；容器编辑→详情页因元素覆盖恰好干净，无需处理）。这里在继续跑之前把树上
+    这些死节点摘掉。
+    """
+    children = getattr(node, "children", None)
+    if not children:
+        return
+    for idx in list(children):
+        child = children[idx]
+        try:
+            child._widget_state      # Widget 节点：探测服务端 state 是否已被清理
+        except KeyError:
+            del children[idx]        # 死节点：摘掉，避免下一轮 run() KeyError
+            continue
+        except AttributeError:
+            pass                      # 非 Widget 节点：没有 _widget_state
+        prune_dead_widgets(child)
+
+
 def main():
     at = AppTest.from_file("app.py", default_timeout=60)
     at.run()
@@ -53,30 +78,39 @@ def main():
     # 空库保底（干净克隆无容器）：新增表单/3b/后续都要选容器 → 自建一个测试容器，
     # 结束统一清理；有演示数据则直接复用（评审 P1-⑤：不硬编码容器名也不要求种子）
     if conn.execute("SELECT COUNT(*) FROM containers").fetchone()[0] == 0:
-        repo.add_container(conn, "E2E_CTR_BASE", None, "e2e 保底")
+        repo.add_container(conn, "E2E_CTR_BASE", None, "e2e 保底", "")
         # 容器写库后必须立即刷新元素树：AppTest 校验 selectbox 的 value 必须在其
         # options 内（旧渲染只有占位符），否则首次 at.run() 抛 ValueError:
         # 'E2E_CTR_BASE' is not in list（CI 实测；本地 1.40.1 不校验，新版才拦）
         at.run()
         assert len(at.exception) == 0, at.exception
+    # Phase 7：新增入口收进「物品浏览」Tab——先点浏览态顶部「➕ 新增物品」
+    # 进入新增子页面（不再有独立 Add Tab）
+    add_entry = find_button(at, label_contains="新增物品")
+    assert add_entry is not None, "物品 Tab 浏览态缺新增入口按钮"
+    add_entry.click()
+    at.run()
+    assert len(at.exception) == 0, at.exception
+    assert "add_item_mode" in at.session_state and at.session_state["add_item_mode"] is True, \
+        "点击新增入口未进入新增子页面"
     # 编号/容器/购买日期三个字段都在，但默认不给内容：编号空、容器=占位未选、
     # 日期靠默认勾选"无购买日期"留空（date_input 原生无空态）
     assert str(at.text_input(key="draft_item_no").value) == "", "编号不应预填"
-    assert len(at.tabs[5].selectbox) == 1, "添加表单应有容器选择下拉"
-    assert "(请选择容器)" in str(at.tabs[5].selectbox[0].value), "容器默认应为占位(未预选)"
-    assert at.tabs[5].checkbox[0].value is True, "无购买日期应默认勾选(不预填日期)"
-    assert at.tabs[5].date_input[0].disabled is False, "日期框应始终可填(不得 disabled 联动勾选框)"
+    assert len(at.tabs[0].selectbox) == 1, "添加表单应有容器选择下拉"
+    assert "(请选择容器)" in str(at.tabs[0].selectbox[0].value), "容器默认应为占位(未预选)"
+    assert at.tabs[0].checkbox[0].value is True, "无购买日期应默认勾选(不预填日期)"
+    assert at.tabs[0].date_input[0].disabled is False, "日期框应始终可填(不得 disabled 联动勾选框)"
     print("✅ 添加表单字段齐全且默认无内容（编号/容器/日期不预填）")
 
     at.text_input(key="draft_item_no").set_value("E2E_ITEM_001")
-    at.text_input[1].set_value("E2E测试物品")       # name（tab6 表单第二个 text_input）
+    at.text_input[1].set_value("E2E测试物品")       # name（新增表单第二个 text_input）
     at.text_input[4].set_value("端到端,回归")       # tags
     at.number_input[0].set_value(123.45)            # price
     # 容器/日期“可以填”：取消无日期勾选、各选一个真实值
     e2e_cont_name = conn.execute("SELECT name FROM containers ORDER BY id LIMIT 1").fetchone()[0]
-    at.tabs[5].selectbox[0].set_value(e2e_cont_name)
-    at.tabs[5].checkbox[0].set_value(False)
-    at.tabs[5].date_input[0].set_value(date(2024, 1, 15))
+    at.tabs[0].selectbox[0].set_value(e2e_cont_name)
+    at.tabs[0].checkbox[0].set_value(False)
+    at.tabs[0].date_input[0].set_value(date(2024, 1, 15))
     btn = find_button(at, label_contains="保存物品")
     assert btn is not None, "找不到保存按钮"
     btn.click()
@@ -89,9 +123,14 @@ def main():
     row = conn.execute("SELECT id, name FROM items WHERE item_no='E2E_ITEM_001'").fetchone()
     assert row, "物品未落库"
     item_id = row[0]
-    # 保存成功应打开新物品详情（detail_item_id 指向新物品；AppTest 不执行切 Tab 的 JS）
+    # 保存成功应退出新增态并打开新物品详情（新增子页面在物品 Tab 内，无需跨 Tab 跳转）
     assert at.session_state["detail_item_id"] == item_id, at.session_state["detail_item_id"]
+    assert "add_item_mode" in at.session_state and at.session_state["add_item_mode"] is False, \
+        "保存成功后应退出新增子页面"
     print("✅ 保存成功自动打开新物品详情")
+    # 新增表单已随 rerun 卸载，但其输入控件节点会残留在 AppTest 树上（state 已清），
+    # 摘掉后再跑，否则下一轮 run() 收集 widget 状态会 KeyError（见 prune_dead_widgets）
+    prune_dead_widgets(at._tree)
     # 所填容器与日期按选择落库
     e2e_cont_id = conn.execute("SELECT id FROM containers WHERE name=?",
                                (e2e_cont_name,)).fetchone()[0]
@@ -136,9 +175,8 @@ def main():
     at.run()
     assert len(at.exception) == 0, at.exception
     assert len(at.tabs[0].radio) == 0, "详情页不应出现列表/卡片切换 radio"
-    # 详情是浏览态延伸：此时点其它 Tab 必须正常渲染（子页面不得 st.stop() 截断脚本）
-    assert len(at.tabs[5].text_input) > 0, "详情页下 Add 页空白（st.stop 截断了脚本）"
-    assert len(at.tabs[6].radio) >= 1, "详情页下 Containers 页空白（st.stop 截断了脚本）"
+    # 详情是浏览态延伸：此时其它 Tab 必须正常渲染（子页面不得 st.stop() 截断脚本）
+    assert len(at.tabs[5].radio) >= 1, "详情页下 Containers 页空白（st.stop 截断了脚本）"
     assert any(e2e_cont_name in str(getattr(m, "value", "")) for m in at.tabs[0].markdown), \
         "详情页容器行应显示所选容器"
     print("✅ 详情页渲染 0 异常，其它 Tab 正常，容器行显示所选容器")
@@ -196,8 +234,7 @@ def main():
     edit_texts = [str(getattr(t, "value", "")) for t in at.text_input]
     assert any("E2E_ITEM_001" in v for v in edit_texts), "编辑表单未带出编号"
     assert len(at.tabs[0].radio) == 0, "编辑页不应出现列表/卡片切换 radio"
-    assert len(at.tabs[5].text_input) > 0, "编辑页下 Add 页空白（st.stop 截断了脚本）"
-    assert len(at.tabs[6].radio) >= 1, "编辑页下 Containers 页空白（st.stop 截断了脚本）"
+    assert len(at.tabs[5].radio) >= 1, "编辑页下 Containers 页空白（st.stop 截断了脚本）"
     print("✅ 编辑页渲染 0 异常，编号已带出，其它 Tab 同轮正常渲染")
 
     # ---- 4b. 编辑表单录入“关联物品编号”（整体校验通过）→ 提交落库 item_links ----
@@ -310,13 +347,14 @@ def main():
         print("✅ 列表工具栏常驻：选中状态下点击进入详情无异常")
 
     # ---- 7. Phase 6: 容器管理 → 卡片视图 + 容器详情页渲染 ----
-    assert len(at.tabs) >= 7, f"tabs 数量: {len(at.tabs)}"
-    cont_radio = at.tabs[6].radio(key="container_view_radio")
+    # Phase 7 起「新增物品」不再是独立 Tab（收进物品 Tab），容器管理为最后一个 Tab（index 5）
+    assert len(at.tabs) >= 6, f"tabs 数量: {len(at.tabs)}"
+    cont_radio = at.tabs[5].radio(key="container_view_radio")
     assert cont_radio is not None, "容器视图切换 radio 不存在"
     cont_radio.set_value("Cards")   # 英文界面下容器卡片视图
     at.run()
     assert len(at.exception) == 0, at.exception
-    card_btn = find_button(at.tabs[6], label_contains="Open Details")
+    card_btn = find_button(at.tabs[5], label_contains="Open Details")
     assert card_btn is not None, "卡片视图未渲染打开详情按钮"
     print("✅ 容器卡片视图渲染 0 异常")
 
@@ -325,14 +363,14 @@ def main():
     at.run()
     assert len(at.exception) == 0, at.exception
     assert at.session_state["container_detail_id"] is not None, "容器详情未打开"
-    sub_headers = [str(getattr(h, "value", "")) for h in at.tabs[6].subheader]
+    sub_headers = [str(getattr(h, "value", "")) for h in at.tabs[5].subheader]
     assert any("Container Details" in v for v in sub_headers), f"详情页标题缺失: {sub_headers}"
     print("✅ 容器详情页渲染 0 异常（照片管理已移至编辑表单）")
     # st.write 的文本在 AppTest 树中落点为 markdown 元素；详情页只读展示，
     # 不再渲染照片管理区。详情页 Edit → 编辑表单，表单外的既有照片管理区
     # （上移/下移/删除）仅编辑模式渲染。AppTest 元素树不支持 file_uploader
     # （也无法模拟上传），改用文案/按钮断言。
-    writes = [str(getattr(m, "value", "")) for m in at.tabs[6].markdown]
+    writes = [str(getattr(m, "value", "")) for m in at.tabs[5].markdown]
     assert not any("Upload container photos" in v for v in writes), \
         f"详情页不应再有照片管理区: {writes}"
     # 用 repo 层造带 2 张图的容器驱动「编辑表单含照片管理区」断言
@@ -343,34 +381,58 @@ def main():
             "SELECT id FROM containers WHERE name='E2E_CTR_IMG'")]
         if pre:
             repo.delete_containers(conn_c, pre)
-        cid_c = repo.add_container(conn_c, "E2E_CTR_IMG", None, "e2e",
+        cid_c = repo.add_container(conn_c, "E2E_CTR_IMG", None, "e2e", "",
                                    [types.SimpleNamespace(name="a.jpg", getbuffer=lambda: img_x),
                                     types.SimpleNamespace(name="b.jpg", getbuffer=lambda: img_x)])
         at.session_state["container_detail_id"] = cid_c
         at.run()
         assert len(at.exception) == 0, at.exception
-        writes = [str(getattr(m, "value", "")) for m in at.tabs[6].markdown]
+        writes = [str(getattr(m, "value", "")) for m in at.tabs[5].markdown]
         assert any("Container Photos" in v for v in writes), f"详情画廊标题缺失: {writes}"
         assert not any("Upload container photos" in v for v in writes), \
             f"详情页不应再有照片管理区: {writes}"
-        edit_btn2 = find_button(at.tabs[6], label_contains="Edit")
+        edit_btn2 = find_button(at.tabs[5], label_contains="Edit")
         assert edit_btn2 is not None, "容器详情页缺编辑按钮"
         edit_btn2.click()
         at.run()
         assert len(at.exception) == 0, at.exception
-        subs = [str(getattr(h, "value", "")) for h in at.tabs[6].subheader]
+        subs = [str(getattr(h, "value", "")) for h in at.tabs[5].subheader]
         assert any("Edit Container" in v for v in subs), f"编辑表单未打开: {subs}"
-        writes = [str(getattr(m, "value", "")) for m in at.tabs[6].markdown]
+        writes = [str(getattr(m, "value", "")) for m in at.tabs[5].markdown]
         assert any("Existing images" in v for v in writes), f"编辑表单缺既有照片管理区: {writes}"
-        assert find_button(at.tabs[6], label_exact="⬆️ Up") is not None, "缺照片上移按钮"
-        assert find_button(at.tabs[6], label_exact="🗑️ Delete") is not None, "缺照片删除按钮"
-        cancel_btn = find_button(at.tabs[6], label_contains="Cancel")
+        assert find_button(at.tabs[5], label_exact="⬆️ Up") is not None, "缺照片上移按钮"
+        assert find_button(at.tabs[5], label_exact="🗑️ Delete") is not None, "缺照片删除按钮"
+        # Phase 7：附注框（编辑表单内唯一 text_area，位于上级容器/位置之下）→ 更新
+        # → 落库 + 详情页整行展示；更新后回到详情页（edit_container_id 已清空）
+        note_ta = at.tabs[5].text_area[0]
+        assert note_ta is not None, "容器编辑表单缺附注文本框"
+        note_ta.set_value("e2e 附注：靠窗第二层")
+        update_btn = find_button(at.tabs[5], label_contains="Update")
+        assert update_btn is not None, "容器编辑表单缺更新按钮"
+        update_btn.click()
+        at.run()
+        assert len(at.exception) == 0, at.exception
+        assert conn_c.execute("SELECT note FROM containers WHERE id=?",
+                              (cid_c,)).fetchone()[0] == "e2e 附注：靠窗第二层", "附注未落库"
+        writes = [str(getattr(m, "value", "")) for m in at.tabs[5].markdown]
+        assert any("e2e 附注：靠窗第二层" in v for v in writes), f"详情页未展示附注: {writes}"
+        assert at.session_state["container_detail_id"] == cid_c, "附注保存后应回容器详情"
+        print("✅ 容器附注：编辑表单录入 → 落库 → 详情页展示")
+        # 重新进入编辑表单，附注值应带回（验证取消仍回详情）
+        edit_btn3 = find_button(at.tabs[5], label_contains="Edit")
+        assert edit_btn3 is not None, "容器详情页缺编辑按钮"
+        edit_btn3.click()
+        at.run()
+        assert len(at.exception) == 0, at.exception
+        assert str(at.tabs[5].text_area[0].value) == "e2e 附注：靠窗第二层", \
+            "重进编辑表单附注未带回"
+        cancel_btn = find_button(at.tabs[5], label_contains="Cancel")
         assert cancel_btn is not None, "容器编辑表单缺取消按钮"
         cancel_btn.click()
         at.run()
         assert len(at.exception) == 0, at.exception
         assert at.session_state["container_detail_id"] == cid_c, "取消后应回容器详情"
-        print("✅ 容器照片管理位于编辑表单：详情页无管理区，编辑表单含上传/排序/删除")
+        print("✅ 容器照片管理位于编辑表单：详情页无管理区，编辑表单含上传/排序/删除；附注可录入/落库/展示/带回")
     finally:
         left = [r[0] for r in conn_c.execute(
             "SELECT id FROM containers WHERE name='E2E_CTR_IMG'")]

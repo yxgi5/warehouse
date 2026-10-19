@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Tab1 物品浏览：列表/卡片双视图 + 详情页 + 编辑模式（含图片管理）。"""
+"""Tab1 物品浏览：列表/卡片双视图 + 详情页 + 编辑模式（含图片管理）+ 新增子页面。
+
+Phase 7：「➕ 新增物品」由独立 Tab 收进本 Tab——入口按钮在浏览态顶部，
+新增表单/CSV 导入作为 add_item_mode 子页面渲染（与详情/编辑同级）。
+"""
 import os
 import base64
 import mimetypes
@@ -9,6 +13,7 @@ import streamlit as st
 import db
 import repo
 import i18n
+from ui import add_tab
 
 try:
     from streamlit.runtime import get_instance as _st_get_instance
@@ -503,8 +508,12 @@ def render_card_view(conn, df_all, total_items):
 # ==================== Tab 入口 ====================
 
 def render(conn, search, tag_filter, container_options):
-    # 详情/编辑是子页面：优先渲染并 return，避免浏览态控件（视图切换 radio、
-    # 列表/卡片）出现在详情/编辑页顶部。注意不能 st.stop()——那会中断整个
+    # 会话状态：新增物品子页面开关（Phase 7：新增入口由独立 Tab 收进本 Tab）
+    if 'add_item_mode' not in st.session_state:
+        st.session_state.add_item_mode = False
+
+    # 详情/编辑/新增都是子页面：优先渲染并 return，避免浏览态控件（视图切换 radio、
+    # 新增入口）出现在子页面顶部。注意不能 st.stop()——那会中断整个
     # 脚本，st.tabs 全量渲染，其后所有 tab 内容都会变空。
     if st.session_state.detail_item_id is not None:
         item = repo.load_item_by_id(conn, st.session_state.detail_item_id)
@@ -526,12 +535,27 @@ def render(conn, search, tag_filter, container_options):
         render_edit_mode(conn, item_data, container_options)
         return
 
+    # --- 新增物品子页面（Phase 7：原独立「➕ 新增物品」Tab 收进本 Tab）---
+    if st.session_state.add_item_mode:
+        add_tab.render(conn, container_options)
+        return
+
     # --- 浏览态：子视图切换（内部值用稳定 list/card，显示文本按语言翻译）---
-    mode_labels = [i18n.t("items.view_list"), i18n.t("items.view_card")]
-    current_mode = st.session_state.view_mode if st.session_state.view_mode in ("list", "card") else "list"
-    mode_choice = st.radio(i18n.t("items.switch_view"), mode_labels, horizontal=True,
-                           index=0 if current_mode == "list" else 1)
-    st.session_state.view_mode = "list" if mode_choice == mode_labels[0] else "card"
+    # 「➕ 新增物品」入口放在本 Tab 浏览态顶部（列表/卡片视图均常驻可见）：
+    # 不再作为独立 Tab，否则从任意 Tab 点进来都会直接进入新增页、覆盖当前
+    # 浏览状态，造成逻辑混乱。
+    col_mode, col_add = st.columns([2, 1])
+    with col_mode:
+        mode_labels = [i18n.t("items.view_list"), i18n.t("items.view_card")]
+        current_mode = st.session_state.view_mode if st.session_state.view_mode in ("list", "card") else "list"
+        mode_choice = st.radio(i18n.t("items.switch_view"), mode_labels, horizontal=True,
+                               index=0 if current_mode == "list" else 1)
+        st.session_state.view_mode = "list" if mode_choice == mode_labels[0] else "card"
+    with col_add:
+        st.write("")   # 与左侧 radio 选项行大致对齐（radio 标签占一行）
+        if st.button(i18n.t("items.add_btn"), key="items_add_btn", use_container_width=True):
+            st.session_state.add_item_mode = True
+            st.rerun()
 
     # 获取数据（用传入的 tag_filter，与 sidebar 同步后的 session_state 保持一致）
     df_all = repo.get_filtered_data(conn, search, tag_filter)

@@ -457,7 +457,7 @@ def get_container_options(conn):
 
 
 def get_container(conn, cid):
-    return conn.execute("SELECT id, name, parent_id, location FROM containers WHERE id=?",
+    return conn.execute("SELECT id, name, parent_id, location, note FROM containers WHERE id=?",
                         (cid,)).fetchone()
 
 
@@ -470,10 +470,10 @@ def container_name_exists(conn, name, exclude_id=None):
     return c.fetchone()[0] > 0
 
 
-def add_container(conn, name, parent_id, location, uploaded_files=None):
+def add_container(conn, name, parent_id, location, note, uploaded_files=None):
     """新增容器；可随表单携带照片（可选，与物品新增一致）。返回新容器 id。"""
-    cur = conn.execute("INSERT INTO containers (name, parent_id, location) VALUES (?, ?, ?)",
-                       (name, parent_id, location))
+    cur = conn.execute("INSERT INTO containers (name, parent_id, location, note) VALUES (?, ?, ?, ?)",
+                       (name, parent_id, location, note))
     cid = cur.lastrowid
     if uploaded_files:
         save_container_images(conn, cid, uploaded_files)
@@ -481,10 +481,10 @@ def add_container(conn, name, parent_id, location, uploaded_files=None):
     return cid
 
 
-def update_container(conn, cid, name, parent_id, location, uploaded_files=None):
+def update_container(conn, cid, name, parent_id, location, note, uploaded_files=None):
     """更新容器基本信息；可随表单追加照片（可选）。失败时整体回滚。"""
-    conn.execute("UPDATE containers SET name=?, parent_id=?, location=? WHERE id=?",
-                 (name, parent_id, location, cid))
+    conn.execute("UPDATE containers SET name=?, parent_id=?, location=?, note=? WHERE id=?",
+                 (name, parent_id, location, note, cid))
     if uploaded_files:
         save_container_images(conn, cid, uploaded_files)
     conn.commit()

@@ -1,5 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Tab6 新增物品：录入表单（编号/容器/日期均无预填 + 标签 + 多图）+ CSV 批量导入。"""
+"""物品新增子页面：录入表单（编号/容器/日期均无预填 + 标签 + 多图）+ CSV 批量导入。
+
+原为独立 Tab（「➕ 新增物品」），Phase 7 起收进「物品浏览」Tab 作为子页面
+（与详情/编辑子页面同级的 add_item_mode 态）：入口按钮放在物品 Tab 浏览态
+顶部，从其他 Tab 不应直接进入新增页，否则会覆盖当前浏览状态、造成逻辑混乱。
+保存成功后在本 Tab 内直接打开新物品详情，不再需要跨 Tab 跳转机制。
+"""
 import pandas as pd
 import streamlit as st
 import db
@@ -38,7 +44,18 @@ def render(conn, container_options):
         uploaded_files = st.file_uploader(i18n.t("add.upload_images"), type=['jpg', 'png', 'jpeg', 'gif'],
                                           accept_multiple_files=True)
 
-        if st.form_submit_button(i18n.t("add.save")):
+        col_btn1, col_btn2 = st.columns([1, 4])
+        with col_btn1:
+            submitted = st.form_submit_button(i18n.t("add.save"))
+        with col_btn2:
+            cancel = st.form_submit_button(i18n.t("common.cancel"))
+
+        if cancel:
+            # 取消新增：回到物品浏览态（新增页是物品 Tab 的子页面，不是独立 Tab）
+            st.session_state.add_item_mode = False
+            st.rerun()
+
+        if submitted:
             if not item_no or not name:
                 st.error(i18n.t("form.required_msg"))
             elif repo.item_no_exists(conn, item_no):
@@ -50,9 +67,10 @@ def render(conn, container_options):
                                             purchase_date.strftime('%Y-%m-%d') if (purchase_date and not no_date) else '',
                                             platform, order_no, price, features, description,
                                             tags, uploaded_files, repo.parse_related_text(related_items))
-                    # 保存成功：跳到物品 Tab 并直接打开新物品详情，用户立刻看到录入结果
+                    # 保存成功：退出新增态并直接打开新物品详情，用户立刻看到录入结果
+                    # （新增入口已收进物品 Tab，无需 goto_tab 跨 Tab 跳转）
                     st.session_state.detail_item_id = item_id
-                    st.session_state.goto_tab = 0   # 0 = items Tab（st.tabs 顺序），app.py 顶层一次性消费
+                    st.session_state.add_item_mode = False
                     st.toast(i18n.t("add.saved", item_no=item_no), icon="🎉")
                     st.rerun()
                 except Exception as e:

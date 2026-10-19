@@ -68,7 +68,7 @@ def main():
 
     # ---------- 物品 CRUD ----------
     # 种子容器已移除：自建容器供后续用例使用（容器名同时用于「全字段搜索命中容器名」用例）
-    repo.add_container(conn, "测试容器甲", None, "测试位")
+    repo.add_container(conn, "测试容器甲", None, "测试位", "")
     TEST_CNAME = "测试容器甲"
     cid = conn.execute("SELECT id FROM containers WHERE name=?", (TEST_CNAME,)).fetchone()[0]
     i1 = repo.add_item(conn, "ITEM_20260820_001", "苹果手机", cid, "2026-01-01",
@@ -380,15 +380,17 @@ def main():
           str(mix_imp_errs))
 
     # ---------- 容器 CRUD ----------
-    repo.add_container(conn, "Box_C03", None, "衣柜上层")
+    repo.add_container(conn, "Box_C03", None, "衣柜上层", "Phase 7 附注：朝南抽屉")
     cid3 = conn.execute("SELECT id FROM containers WHERE name='Box_C03'").fetchone()[0]
     check("容器名称唯一校验", repo.container_name_exists(conn, "Box_C03") is True)
-    repo.update_container(conn, cid3, "Box_C03_改", cid, "衣柜顶层")
+    check("add_container 附注落库", repo.get_container(conn, cid3)[4] == "Phase 7 附注：朝南抽屉")
+    repo.update_container(conn, cid3, "Box_C03_改", cid, "衣柜顶层", "附注已改")
     check("update_container", repo.get_container(conn, cid3)[1] == "Box_C03_改")
+    check("update_container 附注更新", repo.get_container(conn, cid3)[4] == "附注已改")
     item_cnt, child_cnt = repo.container_usage(conn, cid3)
     check("container_usage 空容器", item_cnt == 0 and child_cnt == 0)
     # 造子容器再验证 usage
-    repo.add_container(conn, "Box_C03_子", cid3, "")
+    repo.add_container(conn, "Box_C03_子", cid3, "", "")
     _, child_cnt2 = repo.container_usage(conn, cid3)
     check("container_usage 统计子容器", child_cnt2 == 1)
     repo.delete_containers(conn, [conn.execute("SELECT id FROM containers WHERE name='Box_C03_子'").fetchone()[0]])
@@ -398,17 +400,17 @@ def main():
           repo.get_container_options(conn) == {n: i for i, n in conn.execute("SELECT id, name FROM containers")})
 
     # ---------- Phase 6: 容器图片 ----------
-    repo.add_container(conn, "Box_D04", None, "抽屉下层")
+    repo.add_container(conn, "Box_D04", None, "抽屉下层", "")
     cd = conn.execute("SELECT id FROM containers WHERE name='Box_D04'").fetchone()[0]
     n1 = repo.save_container_images(conn, cd, [fake_upload("c1.jpg"), fake_upload("c2.jpg")])
     n2 = repo.save_container_images(conn, cd, [fake_upload("c3.jpg")])
     check("save_container_images 追加张数", n1 == 2 and n2 == 1, f"{n1},{n2}")
     # add_container / update_container 随表单带照片（与物品编辑一致：照片随提交保存）
-    cid_newadd = repo.add_container(conn, "Box_D04b", None, "床上层",
+    cid_newadd = repo.add_container(conn, "Box_D04b", None, "床上层", "",
                                     [fake_upload("c_add1.jpg"), fake_upload("c_add2.jpg")])
     check("add_container 带照片入库 2 张",
           len(repo.load_container_images_full(conn, cid_newadd)) == 2)
-    repo.update_container(conn, cid_newadd, "Box_D04b_改", None, "床顶层",
+    repo.update_container(conn, cid_newadd, "Box_D04b_改", None, "床顶层", "",
                           [fake_upload("c_up1.jpg")])
     check("update_container 带照片追加 1 张",
           len(repo.load_container_images_full(conn, cid_newadd)) == 3)
@@ -462,7 +464,7 @@ def main():
           repo.get_container(conn, cd) is None)
 
     # ---------- Phase 6: 孤儿扫描扩展到容器图片 ----------
-    repo.add_container(conn, "Box_E05", None, "测试孤儿")
+    repo.add_container(conn, "Box_E05", None, "测试孤儿", "")
     ce = conn.execute("SELECT id FROM containers WHERE name='Box_E05'").fetchone()[0]
     conn.execute("INSERT INTO container_images (container_id, file_path, sort_order) VALUES (?, 'ghost_photo.jpg', 0)",
                  (ce,))
@@ -506,6 +508,10 @@ def main():
     check("migrate_schema 保留旧数据", oc.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 1)
     check("migrate_schema 重建外键",
           len(oc.execute("PRAGMA foreign_key_list(items)").fetchall()) >= 1)
+    # Phase 7：旧库 containers 补 note 列（迁移重建的表结构不含 note），历史行留空
+    cont_cols = {r[1] for r in oc.execute("PRAGMA table_info(containers)")}
+    check("旧库 containers 补 note 列", "note" in cont_cols, str(cont_cols))
+    check("旧容器 note 为空", oc.execute("SELECT note FROM containers WHERE id=1").fetchone()[0] is None)
     tags_rows = oc.execute("SELECT t.name FROM item_tags it JOIN tags t ON it.tag_id=t.id WHERE it.item_id=1").fetchall()
     check("migrate_tags 拆分旧逗号标签", {r[0] for r in tags_rows} == {"旧标签A", "旧标签B"}, str(tags_rows))
     check("migrate_tags 清空旧列", oc.execute("SELECT tags FROM items WHERE id=1").fetchone()[0] == "")
