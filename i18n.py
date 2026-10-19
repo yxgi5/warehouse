@@ -29,7 +29,6 @@ TRANSLATIONS = {
         "app.tab.timeline": "⏳ 时间线",
         "app.tab.tags": "🏷 标签墙",
         "app.tab.tree": "🌳 容器树",
-        "app.tab.add": "➕ 新增物品",
         "app.tab.containers": "📦 容器管理",
 
         # ==================== 通用 ====================
@@ -119,6 +118,7 @@ TRANSLATIONS = {
         "items.f_features": "**特点**",
         "items.f_description": "**附加说明**",
         "items.view_detail": "📄 查看详情",
+        "items.add_btn": "➕ 新增物品",
         "items.export_selected": "📥 导出选中",
         "items.click_download": "点击下载",
         "items.export_ok": "导出成功！点击上方链接下载。",
@@ -182,6 +182,7 @@ TRANSLATIONS = {
         "containers.none_parent": "（无）",
         "containers.parent": "上级容器",
         "containers.location": "位置描述",
+        "containers.note": "附注",
         "containers.update": "💾 更新",
         "containers.add": "➕ 添加",
         "containers.delete_btn": "🗑️ 删除此容器",
@@ -210,6 +211,7 @@ TRANSLATIONS = {
         "containers.open_detail": "打开详情",
         "containers.detail_title": "📦 容器详情: {name}",
         "containers.detail_location": "**位置**",
+        "containers.detail_note": "**附注**",
         "containers.detail_parent": "**上级容器**",
         "containers.detail_children": "**子容器**",
         "containers.detail_items": "**物品数**",
@@ -253,7 +255,6 @@ TRANSLATIONS = {
         "app.tab.timeline": "⏳ Timeline",
         "app.tab.tags": "🏷 Tags",
         "app.tab.tree": "🌳 Container Tree",
-        "app.tab.add": "➕ Add Item",
         "app.tab.containers": "📦 Containers",
 
         # ==================== Common ====================
@@ -343,6 +344,7 @@ TRANSLATIONS = {
         "items.f_features": "**Features**",
         "items.f_description": "**Description**",
         "items.view_detail": "📄 View Details",
+        "items.add_btn": "➕ Add Item",
         "items.export_selected": "📥 Export Selected",
         "items.click_download": "Click to download",
         "items.export_ok": "Export OK! Click the link above to download.",
@@ -406,6 +408,7 @@ TRANSLATIONS = {
         "containers.none_parent": "(None)",
         "containers.parent": "Parent Container",
         "containers.location": "Location",
+        "containers.note": "Note",
         "containers.update": "💾 Update",
         "containers.add": "➕ Add",
         "containers.delete_btn": "🗑️ Delete Container",
@@ -434,6 +437,7 @@ TRANSLATIONS = {
         "containers.open_detail": "Open Details",
         "containers.detail_title": "📦 Container Details: {name}",
         "containers.detail_location": "**Location**",
+        "containers.detail_note": "**Note**",
         "containers.detail_parent": "**Parent**",
         "containers.detail_children": "**Children**",
         "containers.detail_items": "**Items**",

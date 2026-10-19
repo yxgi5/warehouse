@@ -1,10 +1,14 @@
 # -*- coding: utf-8 -*-
-"""Tab7 容器管理：树形容器的增删改 + 列表/卡片双视图 + 容器详情页（照片/物品清单）。
+"""Tab6 容器管理：树形容器的增删改 + 列表/卡片双视图 + 容器详情页（照片/物品清单）。
 
 Phase 6 新增：
 - 容器照片：container_images 独立表，编辑表单内上传/删除/排序（与物品编辑一致）；
 - 浏览视图：列表（含批量操作）↔ 卡片（首图+信息，点击进详情）；
 - 详情页：只读多图画廊 + 信息区 + 内部物品清单（点击跳转物品浏览标签的详情页）。
+
+Phase 7 新增：
+- 容器附注：containers.note 文本列，编辑表单「上级容器」下方整行附注框
+  （与位置描述同级的基础信息），详情页信息区一并展示。
 
 注意：容器列表不再在本 Tab 内重复重建——app.py 顶层每次 rerun 统一查询一次
 （repo.get_container_options），本模块变更容器后仅 st.rerun() 即可刷新全局下拉框。
@@ -75,12 +79,13 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
             st.session_state.edit_container_id = None
             st.rerun()
             return
-        _, current_name, current_parent_id, current_location = cont_data
+        _, current_name, current_parent_id, current_location, current_note = cont_data
         title = i18n.t("containers.edit_title", name=current_name)
     else:
         current_name = ""
         current_parent_id = None
         current_location = ""
+        current_note = ""
         title = i18n.t("containers.add_title")
 
     st.subheader(title)
@@ -116,6 +121,10 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
         with col2:
             new_location = st.text_input(i18n.t("containers.location"), value=current_location)
 
+        # 附注（Phase 7）：整行多行文本框，位于上级容器/位置之下、照片上传之上——
+        # 与物品表单的特点/附加说明一致，长文本不撑破两列布局
+        new_note = st.text_area(i18n.t("containers.note"), value=current_note, height=120)
+
         # 照片随表单提交上传（新增/编辑均可，与物品表单一致）
         uploaded_files = st.file_uploader(i18n.t("containers.upload_images"),
                                           type=['jpg', 'png', 'jpeg', 'gif'],
@@ -146,11 +155,11 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
                 try:
                     if is_edit:
                         repo.update_container(conn, cont_id, new_name, new_parent_id,
-                                              new_location, uploaded_files)
+                                              new_location, new_note, uploaded_files)
                         saved_msg = i18n.t("containers.saved_updated", name=new_name)
                     else:
                         repo.add_container(conn, new_name, new_parent_id,
-                                           new_location, uploaded_files)
+                                           new_location, new_note, uploaded_files)
                         saved_msg = i18n.t("containers.saved_added", name=new_name)
                     st.toast(saved_msg, icon="✅")
                     st.session_state.edit_container_id = None
@@ -227,6 +236,8 @@ def render_detail_readonly(conn, containers_df, cid, exit_key, key_prefix="cd"):
         return
     cont = row.iloc[0]
     name, parent_id, location = cont['name'], cont['parent_id'], cont['location'] or ''
+    # 附注：旧库迁移来的行 note 为 NULL（pandas 读作 NaN），统一归一为空串
+    note = cont['note'] if isinstance(cont['note'], str) else ''
 
     st.subheader(i18n.t("containers.detail_title", name=name))
 
@@ -274,6 +285,8 @@ def render_detail_readonly(conn, containers_df, cid, exit_key, key_prefix="cd"):
     with col2:
         st.write(f"{i18n.t('containers.detail_children')}: {child_count}")
         st.write(f"{i18n.t('containers.detail_items')}: {item_count}")
+    # 附注（可能为长文本）：单独整行展示，避免与统计信息挤在两列里被压窄
+    st.write(f"{i18n.t('containers.detail_note')}: {note or i18n.t('containers.none_value')}")
 
     # 内部物品清单（点击跳转物品浏览标签的详情页）
     items_in = repo.load_items_by_container(conn, cid)

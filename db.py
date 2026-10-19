@@ -59,13 +59,14 @@ def init_db(conn=None):
         c = conn.cursor()
         c.execute('''CREATE TABLE IF NOT EXISTS containers (
             id INTEGER PRIMARY KEY, name TEXT UNIQUE, parent_id INTEGER
-                REFERENCES containers(id) ON DELETE RESTRICT, location TEXT)''')
+                REFERENCES containers(id) ON DELETE RESTRICT, location TEXT, note TEXT)''')
         c.execute('''CREATE TABLE IF NOT EXISTS items (
             id INTEGER PRIMARY KEY, item_no TEXT UNIQUE, name TEXT, container_id INTEGER
                 REFERENCES containers(id) ON DELETE RESTRICT,
             purchase_date TEXT, platform TEXT, order_no TEXT, price REAL,
             features TEXT, description TEXT, tags TEXT)''')
         migrate_schema(conn)   # 旧版无外键的表结构升级（必须先于新表创建）
+        migrate_container_note(conn)   # 旧库 containers 补 note 列（幂等）
         migrate_images_shared(conn)   # images 升级为图片池+item_images（多物品共用，幂等）
         c.execute('''CREATE TABLE IF NOT EXISTS tags (
             id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL)''')
@@ -208,6 +209,16 @@ def migrate_schema(conn):
         conn.commit()
     finally:
         conn.execute("PRAGMA foreign_keys=ON")
+
+
+# 旧库 containers 补 note 列（容器文本附注）：ALTER TABLE ADD COLUMN 幂等——
+# 新库建表已带 note（无操作）；经 migrate_schema rename→create→copy 重建的旧库
+# 表结构不含 note（copy 源也无此列），在此补齐，历史容器 note 为空。
+def migrate_container_note(conn):
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(containers)")}
+    if 'note' not in cols:
+        conn.execute("ALTER TABLE containers ADD COLUMN note TEXT")
+        conn.commit()
 
 
 # images 升级为「图片池 + item_images 关联表」（多物品可共用一张图）：
