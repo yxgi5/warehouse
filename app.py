@@ -4,7 +4,8 @@
 分层：
 - db.py    数据层：连接/建表/迁移/备份/孤儿检测/路径解析（不依赖 streamlit）
 - repo.py  访问层：items/containers/images/tags 的 CRUD 与查询（不依赖 streamlit）
-- ui/      渲染层：各 Tab 的 Streamlit 渲染（sidebar/items/dashboard/timeline/tags/tree/add/containers）
+- ui/      渲染层：各 Tab 的 Streamlit 渲染（sidebar/items/dashboard/timeline/tags/tree/containers；
+            add 为「物品浏览」Tab 内的新增子页面，非独立 Tab）
 - app.py   入口：页面配置、会话状态、Tab 调度、全局数据加载
 
 运行:  streamlit run app.py
@@ -14,7 +15,7 @@ import streamlit.components.v1 as components
 import db
 import repo
 import i18n
-from ui import sidebar, items_tab, dashboard_tab, timeline_tab, tags_tab, tree_tab, add_tab, containers_tab
+from ui import sidebar, items_tab, dashboard_tab, timeline_tab, tags_tab, tree_tab, containers_tab
 
 # --- 语言设置（set_page_config 之前；set_lang 不是 st 调用，不违反"第一个 st 调用"约束） ---
 i18n.set_lang(st.session_state.get('lang', 'en'))
@@ -164,37 +165,15 @@ st.title(i18n.t("app.main_title"))
 
 # --- 定义Tabs ---
 # 注：Streamlit 1.40 的 st.tabs 不支持 key/on_change（1.55 才引入）。
-# 树 Tab 内跨页跳转通过"就地渲染详情页"实现（见 tree_tab.py）；
-# 跨 Tab 跳转（如新增物品保存成功→物品 Tab）用一次性 goto_tab 标记 + JS 点击（见下）。
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+# 树 Tab 内跨页跳转通过"就地渲染详情页"实现（见 tree_tab.py）。
+# Phase 7：「新增物品」不再是独立 Tab，而是「物品浏览」Tab 内的子页面
+# （入口按钮在物品 Tab 浏览态顶部），因此原有的 goto_tab 跨 Tab 跳转机制
+# （JS 模拟点击 Tab 按钮）随之移除——新增保存后直接在本 Tab 打开详情。
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
     [i18n.t("app.tab.items"), i18n.t("app.tab.dashboard"), i18n.t("app.tab.timeline"),
-     i18n.t("app.tab.tags"), i18n.t("app.tab.tree"), i18n.t("app.tab.add"),
+     i18n.t("app.tab.tags"), i18n.t("app.tab.tree"),
      i18n.t("app.tab.containers")]
 )
-
-# --- 一次性跨 Tab 跳转 ---
-# st.tabs 无法从后端切换激活 Tab，只能由组件脚本模拟点击目标 Tab 按钮
-# （iframe 与本 app 同源，可访问 parent DOM）。goto_tab 用 pop 消费：只在
-# 设置它的那一轮执行一次，绝不重复跳转。脚本重试最多 5 秒，覆盖组件
-# iframe 先于 Tab 按钮渲染完成的情况；任何异常静默，不影响页面。
-_goto = st.session_state.pop('goto_tab', None)
-if _goto is not None:
-    components.html(
-        '''<script>
-(function() {
-    var doc = window.parent.document;
-    var target = %d;
-    var n = 0;
-    function hit() {
-        try {
-            var btns = doc.querySelectorAll('button[data-testid="stTab"]');
-            if (btns.length > target) { btns[target].click(); return; }
-        } catch (e) {}
-        if (++n < 50) setTimeout(hit, 100);
-    }
-    hit();
-})();
-</script>''' % int(_goto), height=0)
 
 with tab1:
     items_tab.render(conn, search, tag_filter, container_options)
@@ -212,7 +191,4 @@ with tab5:
     tree_tab.render(conn, search, tag_filter)
 
 with tab6:
-    add_tab.render(conn, container_options)
-
-with tab7:
     containers_tab.render(conn)
