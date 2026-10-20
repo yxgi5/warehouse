@@ -63,21 +63,41 @@ def add_item(conn, item_no, name, container_id, purchase_date, platform, order_n
                price, features, description))
     item_id = c.lastrowid
     set_item_tags(conn, item_id, tags)
-    if uploaded_files:
-        # 去重是双层的：save_shared_image 按内容只落一份文件；同一物品内同内容
-        # 也只关联一次（item_images 主键 (item_id, image_id)，重复关联会冲突）
-        seen = set()
-        for f in uploaded_files:
-            image_id = db.save_shared_image(conn, f, item_no)
-            if image_id in seen:
-                continue   # 本次上传中的重复内容 → 跳过，避免主键冲突
-            seen.add(image_id)
-            c.execute("INSERT INTO item_images (item_id, image_id, sort_order) VALUES (?, ?, ?)",
-                      (item_id, image_id, len(seen) - 1))
+    attach_item_images(conn, item_id, uploaded_files)
     if link_ids:
         _replace_item_links(c, item_id, link_ids)
     conn.commit()
     return item_id
+
+
+def attach_item_images(conn, item_id, uploaded_files):
+    """把上传的图片追加关联到已有物品（图片池去重），返回新增关联张数。
+
+    与 save_container_images 对应：编辑态「添加图片」按钮即时调用，不必等
+    「更新物品」表单提交、更不必退出编辑态。去重是双层的：
+    - save_shared_image 按内容 sha256 只落一份文件（多物品可共用）；
+    - 同一物品内同内容只关联一次（item_images 主键 (item_id, image_id)）。
+    不自行 commit：事务边界交给调用方（update_item 随整体提交；UI 即时添加后单独提交）。
+    不合法文件由 save_shared_image 抛 ValueError，调用方回滚即可。"""
+    if not uploaded_files:
+        return 0
+    c = conn.cursor()
+    seen = {r[0] for r in c.execute("SELECT image_id FROM item_images WHERE item_id=?",
+                                    (item_id,))}
+    order = c.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM item_images WHERE item_id=?",
+                      (item_id,)).fetchone()[0]
+    item_no = c.execute("SELECT item_no FROM items WHERE id=?", (item_id,)).fetchone()[0]
+    added = 0
+    for f in uploaded_files:
+        image_id = db.save_shared_image(conn, f, item_no)   # 内容去重：同图被多物品共用只落一份
+        if image_id in seen:
+            continue
+        seen.add(image_id)
+        c.execute("INSERT INTO item_images (item_id, image_id, sort_order) VALUES (?, ?, ?)",
+                  (item_id, image_id, order))
+        order += 1
+        added += 1
+    return added
 
 
 def update_item(conn, item_id, item_no, name, container_id, purchase_date, platform,
@@ -99,20 +119,7 @@ def update_item(conn, item_id, item_no, name, container_id, purchase_date, platf
               (item_no, name, container_id, purchase_date, platform, order_no,
                price, features, description, item_id))
     set_item_tags(conn, item_id, tags)
-    if uploaded_files:
-        # 追加去重：物品已有的与本轮重复的内容一律跳过（同内容在物品内只关联一次）
-        seen = {r[0] for r in c.execute("SELECT image_id FROM item_images WHERE item_id=?",
-                                        (item_id,))}
-        order = c.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM item_images WHERE item_id=?",
-                          (item_id,)).fetchone()[0]
-        for f in uploaded_files:
-            image_id = db.save_shared_image(conn, f, item_no)   # 内容去重：同图被多物品共用只落一份
-            if image_id in seen:
-                continue
-            seen.add(image_id)
-            c.execute("INSERT INTO item_images (item_id, image_id, sort_order) VALUES (?, ?, ?)",
-                      (item_id, image_id, order))
-            order += 1
+    attach_item_images(conn, item_id, uploaded_files)   # 追加去重（无文件时为 0）
     if link_ids is not None:
         _replace_item_links(c, item_id, link_ids)
     conn.commit()

@@ -41,7 +41,8 @@ def render(conn, container_options):
                                           help=i18n.t("form.related_help"))
         features = st.text_area(i18n.t("form.features"))
         description = st.text_area(i18n.t("form.description"))
-        uploaded_files = st.file_uploader(i18n.t("add.upload_images"), type=['jpg', 'png', 'jpeg', 'gif'],
+        uploaded_files = st.file_uploader(i18n.t("add.upload_images"),
+                                          type=['jpg', 'jpeg', 'png', 'gif', 'webp'],
                                           accept_multiple_files=True)
 
         col_btn1, col_btn2 = st.columns([1, 4])

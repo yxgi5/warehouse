@@ -169,9 +169,6 @@ def render_edit_mode(conn, item_data, container_options):
         features = st.text_area(i18n.t("form.features"), key="edit_features")
         description = st.text_area(i18n.t("form.description"), key="edit_description")
 
-        uploaded_files = st.file_uploader(i18n.t("add.upload_images"), type=['jpg', 'png', 'jpeg', 'gif'],
-                                          accept_multiple_files=True, key="edit_uploaded_files")
-
         col_btn1, col_btn2 = st.columns([1, 4])
         with col_btn1:
             submitted = st.form_submit_button(i18n.t("items.save_update"))
@@ -185,11 +182,13 @@ def render_edit_mode(conn, item_data, container_options):
                 st.error(i18n.t("items.item_no_taken", item_no=item_no))
             else:
                 try:
+                    # 图片不再随表单提交：编辑态的图片增删改在表单外即时生效
+                    # （见下方图片管理区），故此处 uploaded_files 传 None
                     repo.update_item(conn, item_data['id'], item_no, name,
                                      container_options.get(container_name),   # 未归档占位 → None
                                      '' if no_date else purchase_date.strftime('%Y-%m-%d'),
                                      platform, order_no, price, features, description, tags,
-                                     uploaded_files, repo.parse_related_text(related_items))
+                                     None, repo.parse_related_text(related_items))
                     st.session_state.edit_item_id = None
                     st.toast(i18n.t("items.updated"), icon="🎉")
                     st.rerun()
@@ -201,7 +200,34 @@ def render_edit_mode(conn, item_data, container_options):
             st.session_state.edit_item_id = None
             st.rerun()
 
-    # 图片管理区（放表单外，避免按钮触发表单提交丢数据）
+    # 图片管理区（放表单外，避免按钮触发表单提交丢数据；增/删/排序全部即时生效，
+    # 不必点「更新物品」、更不必退出编辑态——加完图抬头就能调顺序）
+    col_up, col_btn = st.columns([3, 1])
+    with col_up:
+        new_files = st.file_uploader(i18n.t("add.upload_images"),
+                                     type=['jpg', 'jpeg', 'png', 'gif', 'webp'],
+                                     accept_multiple_files=True, key="edit_uploaded_files")
+        st.caption(i18n.t("items.photo_hint"))
+    with col_btn:
+        st.write("")   # 与上传框大致对齐（caption 占一行）
+        if st.button(i18n.t("items.add_photos"), key="item_add_photos",
+                     use_container_width=True):
+            if not new_files:
+                st.warning(i18n.t("items.no_photos_selected"))
+            else:
+                try:
+                    n = repo.attach_item_images(conn, item_data['id'], new_files)
+                    conn.commit()
+                    if n:
+                        st.toast(i18n.t("items.photos_added", n=n), icon="🖼️")
+                    else:
+                        st.warning(i18n.t("items.photos_none_new"))
+                    st.rerun()
+                except Exception as e:
+                    db.logger.exception("添加物品图片失败")
+                    st.error(i18n.t("items.photo_add_fail", err=e))
+                    conn.rollback()
+
     img_rows = repo.load_images_full(conn, item_data['id'])
     if img_rows:
         st.write(i18n.t("items.existing_images"))

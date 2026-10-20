@@ -237,6 +237,21 @@ def main():
     assert len(at.tabs[5].radio) >= 1, "编辑页下 Containers 页空白（st.stop 截断了脚本）"
     print("✅ 编辑页渲染 0 异常，编号已带出，其它 Tab 同轮正常渲染")
 
+    # ---- 4a-2. 编辑态图片即时添加入口（Phase 8）：上传框+按钮在表单外，
+    #      不必点「更新物品」、不必退出编辑态即可加图/调顺序 ----
+    add_ph = find_button(at, label_contains="添加图片")
+    assert add_ph is not None, "编辑态缺「添加图片」按钮（图片应可即时生效）"
+    assert any("拖入或点选图片" in str(getattr(c, "value", "")) for c in at.caption), \
+        "编辑态图片区缺操作提示文案"
+    # 未选文件就点 → 警告提示，且仍停留在编辑态（不退出、不报错）
+    add_ph.click()
+    at.run()
+    assert len(at.exception) == 0, at.exception
+    assert any("请先选择要添加的图片" in str(getattr(w, "value", "")) for w in at.warning), \
+        "未选图片点添加应给出提示"
+    assert at.session_state["edit_item_id"] == item_id, "提示后应仍停留在编辑态"
+    print("✅ 编辑态「添加图片」入口在表单外，未选文件有点击提示且不退出编辑态")
+
     # ---- 4b. 编辑表单录入“关联物品编号”（整体校验通过）→ 提交落库 item_links ----
     at.text_input(key="edit_related_items").set_value("E2E_IMG_A, E2E_IMG_B")
     btn = find_button(at, label_contains="更新物品")
@@ -402,6 +417,16 @@ def main():
         assert any("Existing images" in v for v in writes), f"编辑表单缺既有照片管理区: {writes}"
         assert find_button(at.tabs[5], label_exact="⬆️ Up") is not None, "缺照片上移按钮"
         assert find_button(at.tabs[5], label_exact="🗑️ Delete") is not None, "缺照片删除按钮"
+        # Phase 8：照片即时添加入口与物品编辑一致（表单外上传框+按钮，不必点 Update）
+        add_ph_c = find_button(at.tabs[5], label_contains="Add Photos")
+        assert add_ph_c is not None, "容器编辑态缺「Add Photos」按钮（照片应可即时生效）"
+        add_ph_c.click()
+        at.run()
+        assert len(at.exception) == 0, at.exception
+        assert any("select photos" in str(getattr(w, "value", "")).lower() for w in at.warning), \
+            "容器未选照片点添加应给出提示"
+        assert at.session_state["edit_container_id"] == cid_c, "提示后应仍停留在容器编辑态"
+        print("✅ 容器编辑态「Add Photos」入口在表单外，未选文件有点击提示且不退出编辑态")
         # Phase 7：附注框（编辑表单内唯一 text_area，位于上级容器/位置之下）→ 更新
         # → 落库 + 详情页整行展示；更新后回到详情页（edit_container_id 已清空）
         note_ta = at.tabs[5].text_area[0]

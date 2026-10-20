@@ -87,6 +87,17 @@ python -m streamlit run app.py
 - **演示数据**：`seed_demo_data.py` 的 34 个容器均带一句附注（用途 / 找物提示）。
 - **测试**：`test_data_layer.py` 覆盖附注读写与旧库补列迁移；`test_e2e.py` 覆盖「点入口 → 填表 → 保存 → 本 Tab 打开详情」新链路与附注的 UI 录入/落库/展示/重进带回，并新增 AppTest 1.40 边界辅助 `prune_dead_widgets`（表单提交后 app 主动 `st.rerun()` 切走时，树里会残留已卸载的输入控件节点、其 widget state 已被清理，不摘掉下一轮 `run()` 收集状态会 KeyError）。
 
+## WebP 支持与编辑态图片即时生效（Phase 8）
+
+- **webp 直接支持**：`db.py` 的扩展名白名单与文件头魔数校验本就含 webp（`RIFF....WEBP`），此次把 UI 三处上传框的 `type` 列表补上 `'webp'`（物品新增/物品编辑/容器），上传即存 webp 原样——不转 PNG（同画质 webp 小 25–35%，且浏览器与 `st.image` 均直接支持）。
+- **编辑态加图不再依赖「更新物品/更新」**：上传框从 `st.form` 里移到表单外的图片管理区顶部，配「➕ 添加图片 / ➕ 添加照片」按钮——
+  - 物品：`repo.attach_item_images(conn, item_id, files)`（图片池 sha256 去重 + `sort_order` 续接，返回净增张数；不自行 commit，事务边界交调用方）；
+  - 容器：复用既有 `repo.save_container_images(conn, cid, files)`；
+  - 点按钮即时生效并 `st.rerun()`，**仍停留在编辑态**，加完图抬头就能上移/下移/删除；未选文件则给出提示，不退出、不报错。
+  - 已验证：表单外的按钮触发 rerun 后，`st.form` 内未保存的输入不丢失（Streamlit widget state 仍在）。
+- **`update_item` / `add_item` 的图片逻辑合并**到 `attach_item_images`（行为不变：内容去重 + 物品内同内容只关联一次）；容器**新增**态的上传框仍留在表单内（容器尚无 id，无法先附图后存）。
+- **测试**：`test_data_layer.py` 覆盖 `attach_item_images`（张数/sort_order 续接/池去重/空列表/非法文件回滚无半拉关联/`update_item` 回归）与 webp 合法头通过、伪装 webp 拒绝；`test_e2e.py` 覆盖物品与容器编辑态的即时添加入口与未选文件提示。数据层单测增至 139 项。
+
 ## 提交规范（Git Convention）
 
 - **前缀**：统一 Conventional Commits——`feat / fix / refactor / chore / docs / style / test`，带 scope 更佳，如 `feat(i18n)`。
@@ -119,7 +130,7 @@ python -m streamlit run app.py
 
 ```bash
 python smoke_test.py      # AppTest 真实执行 app.py，验证无异常
-python test_data_layer.py # 数据层单测 127 项（建表/迁移/标签/图片/删除/备份/搜索/CSV导入/MIME/容器图片/容器附注）
+python test_data_layer.py # 数据层单测 139 项（建表/迁移/标签/图片/删除/备份/搜索/CSV导入/MIME/容器图片/容器附注/即时加图/WebP）
 python test_i18n.py       # i18n 单测 17 项（双语言 key 集一致/无空值/format/语言联动）
 python test_e2e.py        # 端到端回归（新增→筛选→搜索→详情→编辑→清理→语言切换→容器卡片/详情，全 UI 链路）
 ```
