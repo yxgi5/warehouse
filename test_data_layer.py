@@ -223,6 +223,44 @@ def main():
     conn.execute("DELETE FROM images WHERE sha256='PREHASH'")
     conn.commit()
 
+    # ---------- 编辑态即时加图：attach_item_images（不必提交表单/退出编辑态） ----------
+    ai = repo.add_item(conn, "ITEM_20260820_910", "即时加图", cid, "", "", "", 0, "", "", "", [])
+    files_ai_before = {f for f in os.listdir(db.PHOTOS_DIR)}
+    n_ai1 = repo.attach_item_images(conn, ai, [fake_upload("e.jpg", IMG_C), fake_upload("f.jpg", IMG_D)])
+    conn.commit()
+    rows_ai = repo.load_images_full(conn, ai)
+    check("attach_item_images 返回新增张数", n_ai1 == 2, str(n_ai1))
+    check("attach_item_images 落关联且 sort_order 连续",
+          [r[2] for r in rows_ai] == [0, 1], str(rows_ai))
+    check("attach_item_images 复用图片池（同内容不重复落盘）",
+          len({f for f in os.listdir(db.PHOTOS_DIR)} - files_ai_before) == 2)
+    # 再追加一批：sort_order 续上；内容与已关联重复 → 跳过不报 PK 冲突
+    n_ai2 = repo.attach_item_images(conn, ai, [fake_upload("g.jpg", IMG_A),
+                                               fake_upload("e.jpg", IMG_C)])
+    conn.commit()
+    check("二次追加返回净增张数（重复内容跳过）", n_ai2 == 1, str(n_ai2))
+    check("二次追加 sort_order 续接",
+          [r[2] for r in repo.load_images_full(conn, ai)] == [0, 1, 2])
+    check("重复内容未产生新关联行", len(repo.load_images_full(conn, ai)) == 3)
+    # 空列表：0 张、不动库
+    check("attach_item_images 空列表返回 0", repo.attach_item_images(conn, ai, []) == 0
+          and repo.attach_item_images(conn, ai, None) == 0)
+    # 非法文件：抛 ValueError 且不产生半拉关联（调用方回滚）
+    n_before_ai = len(repo.load_images_full(conn, ai))
+    try:
+        repo.attach_item_images(conn, ai, [fake_upload("evil.webp", b"MZ\x90\x00" + b"\x00" * 16)])
+        check("attach_item_images 拒绝非法文件", False, "未抛异常")
+    except ValueError as e:
+        check("attach_item_images 拒绝非法文件", "不符" in str(e) or "不支持" in str(e), str(e))
+    conn.rollback()
+    check("attach_item_images 失败后无半拉关联",
+          len(repo.load_images_full(conn, ai)) == n_before_ai)
+    # update_item 仍支持随表单带图（回归：内部改调 attach_item_images）
+    repo.update_item(conn, ai, "ITEM_20260820_910", "即时加图", cid, "", "", "", 0, "", "", "",
+                     [fake_upload("h.jpg", IMG_B)])
+    check("update_item 仍可附带图片",
+          len(repo.load_images_full(conn, ai)) == n_before_ai + 1)
+
     # ---------- Phase 4: 图片 MIME 校验（save_uploaded_file） ----------
     png_ok = db.save_uploaded_file(fake_upload("ok.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 16), "MIME_PNG")
     check("合法 PNG 头通过校验并落盘", png_ok.endswith(".png") and os.path.exists(db.img_abs_path(png_ok)), png_ok)
@@ -237,6 +275,16 @@ def main():
         check("无扩展名被拒绝", False, "未抛异常")
     except ValueError as e:
         check("无扩展名被拒绝", "缺少扩展名" in str(e), str(e))
+    # webp 合法文件头通过校验（UI 上传白名单已放开 webp，见各 file_uploader type 列表）
+    webp_ok = db.save_uploaded_file(
+        fake_upload("ok.webp", b"RIFF" + b"\x00" * 4 + b"WEBPVP8 "), "MIME_WEBP")
+    check("合法 WebP 头通过校验并落盘",
+          webp_ok.endswith(".webp") and os.path.exists(db.img_abs_path(webp_ok)), webp_ok)
+    try:
+        db.save_uploaded_file(fake_upload("evil.webp", b"RIFF" + b"\x00" * 4 + b"AVI "), "MIME_EVILW")
+        check("伪装 .webp 被拒绝", False, "未抛异常")
+    except ValueError as e:
+        check("伪装 .webp 被拒绝", "不符" in str(e), str(e))
     try:
         db.save_uploaded_file(fake_upload("doc.txt", b"plain text"), "MIME_TXT")
         check("非法扩展名被拒绝", False, "未抛异常")

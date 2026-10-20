@@ -125,11 +125,15 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
         # 与物品表单的特点/附加说明一致，长文本不撑破两列布局
         new_note = st.text_area(i18n.t("containers.note"), value=current_note, height=120)
 
-        # 照片随表单提交上传（新增/编辑均可，与物品表单一致）
-        uploaded_files = st.file_uploader(i18n.t("containers.upload_images"),
-                                          type=['jpg', 'png', 'jpeg', 'gif'],
-                                          accept_multiple_files=True,
-                                          key="container_upload_files")
+        # 照片上传：新增态随表单提交（容器尚无 id，无法先附图后存）；
+        # 编辑态移到表单外图片管理区即时生效（与物品编辑一致，见下方）
+        if is_edit:
+            uploaded_files = None
+        else:
+            uploaded_files = st.file_uploader(i18n.t("containers.upload_images"),
+                                              type=['jpg', 'jpeg', 'png', 'gif', 'webp'],
+                                              accept_multiple_files=True,
+                                              key="container_upload_files")
 
         # 按钮布局：三列（更新/添加、取消、删除【仅编辑】）
         col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
@@ -181,8 +185,35 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
             else:
                 confirm_container_delete(conn, [cont_id], current_name)
 
-    # 已有照片管理区（仅编辑；放表单外，避免按钮触发表单提交丢数据——与物品编辑一致）
+    # 照片管理区（仅编辑；放表单外，避免按钮触发表单提交丢数据——与物品编辑一致。
+    # 增/删/排序全部即时生效，不必点「更新」、更不必退出编辑态）
     if is_edit:
+        col_up, col_btn = st.columns([3, 1])
+        with col_up:
+            new_files = st.file_uploader(i18n.t("containers.upload_images"),
+                                         type=['jpg', 'jpeg', 'png', 'gif', 'webp'],
+                                         accept_multiple_files=True,
+                                         key="cedit_upload_files")
+            st.caption(i18n.t("containers.photo_hint"))
+        with col_btn:
+            st.write("")   # 与上传框大致对齐（caption 占一行）
+            if st.button(i18n.t("containers.add_photos"), key="cedit_add_photos",
+                         use_container_width=True):
+                if not new_files:
+                    st.warning(i18n.t("containers.no_photos_selected"))
+                else:
+                    try:
+                        n = repo.save_container_images(conn, cont_id, new_files)
+                        if n:
+                            st.toast(i18n.t("containers.photos_added", n=n), icon="🖼️")
+                        else:
+                            st.warning(i18n.t("containers.no_photos_selected"))
+                        st.rerun()
+                    except Exception as e:
+                        db.logger.exception("添加容器照片失败")
+                        st.error(i18n.t("containers.photo_add_fail", err=e))
+                        conn.rollback()
+
         img_rows = repo.load_container_images_full(conn, cont_id)
         if img_rows:
             st.write(i18n.t("items.existing_images"))
