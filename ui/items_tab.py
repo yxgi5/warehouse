@@ -591,6 +591,7 @@ def render(conn, search, tag_filter, container_options):
         with col_add:
             if st.button(i18n.t("items.add_btn"), key="items_add_btn", use_container_width=True):
                 st.session_state.add_item_mode = True
+                st.session_state.add_staged_photos = []   # 进入新增前清空照片暂存草稿
                 st.rerun()
         # Step 3 列表全屏：仅列表视图显示（卡片视图无表格，进入全屏会空白）
         with col_fs:
