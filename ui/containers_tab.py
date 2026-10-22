@@ -486,7 +486,9 @@ def _no_image_markdown(label):
 def render_card_view(conn, containers_df):
     """卡片视图：4 列网格（首图 + 名称 + 位置 + 物品数），点击进详情。"""
     total = len(containers_df)
-    page_size = st.selectbox(i18n.t("items.page_size"), [12, 24, 48, 96], index=1)
+    # 每页数量：与物品卡片视图同梯（4 列网格，档位取 4 的倍数翻倍，每页整行）；
+    # 默认 96，容器数量级小，基本一页看全。
+    page_size = st.selectbox(i18n.t("items.page_size"), [48, 96, 192, 384], index=1)
     total_pages = max(1, (total + page_size - 1) // page_size)
     if 'container_card_page' not in st.session_state:
         st.session_state.container_card_page = 1

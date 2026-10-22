@@ -213,9 +213,13 @@ def main():
     at.tabs[0].radio[0].set_value("卡片")   # 中文界面 items.view_card
     at.run()
     assert len(at.exception) == 0, at.exception
+    # 卡片视图分页档位（Phase 9）：[48, 96, 192, 384]，默认 96（4 列网格整行梯）
+    ps_sel = [s for s in at.selectbox if str(getattr(s, "label", "")) == "每页数量"]
+    assert ps_sel and ps_sel[0].value == 96, \
+        f"卡片视图每页数量默认应为 96: {[s.value for s in ps_sel]}"
     assert any("<img src=" in str(getattr(m, "value", "")) and "/media/" in str(getattr(m, "value", ""))
                for m in at.tabs[0].markdown), "卡片视图首图未走 HTML img 原图 URL 渲染"
-    print("✅ 卡片视图首图按详情页规格渲染（HTML img 限高原图）")
+    print("✅ 卡片视图每页数量默认 96；首图按详情页规格渲染（HTML img 限高原图）")
     at.tabs[0].radio[0].set_value("列表")   # 恢复列表视图与 2c 的筛选状态
     at.sidebar.text_input(key="global_search").set_value("E2E测试物品")
     at.sidebar.text_input(key="global_tag_filter").set_value("端到端")
