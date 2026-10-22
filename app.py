@@ -114,6 +114,14 @@ header[data-testid="stHeader"] [data-testid="stToolbar"] {
 .st-key-container_toolbar button {
     white-space: nowrap !important;
 }
+/* Step 2：列表视图表格高度视口自适应。Streamlit 把高度写在内联 style 上
+   （stDataFrameResizable 的 height:300px），普通选择器压不过 → !important；
+   高度交给 --list-avail-h（由下方同步 JS 按视口实测写入）。卡片/详情页无此容器，
+   选择器不命中即整条规则跳过；无 JS 时回退 300px（可滚动，不破功能）。 */
+.st-key-item_list_wrap [data-testid="stDataFrameResizable"],
+.st-key-container_list_wrap [data-testid="stDataFrameResizable"] {
+    height: var(--list-avail-h, 300px) !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -145,21 +153,55 @@ header[data-testid="stHeader"] [data-testid="stToolbar"] {
             doc.documentElement.style.setProperty('--toolbar-bg', bg || '#ffffff');
         } catch (e) { /* 跨源等异常时静默，保留 CSS fallback */ }
     }
+    // Step 2：列表视图表格高度视口自适应。
+    // 公式：可用高 = 视口高 − 表顶(视口坐标) − 选中提示 alert 高 − 主区 padding-bottom − 缓冲。
+    // 吸底工具栏 position:fixed 不入流，故不计入；表格只填到 alert 之上、工具栏之下，无页面滚动条。
+    function calcListHeight() {
+        try {
+            var doc = window.parent.document;
+            var wrap = doc.querySelector('.st-key-item_list_wrap, .st-key-container_list_wrap');
+            if (!wrap) return;                       // 卡片/详情页无表格，整条跳过
+            var res = wrap.querySelector('[data-testid="stDataFrameResizable"]');
+            if (!res) return;
+            var main = doc.querySelector('[data-testid="stMain"]');
+            if (!main) return;
+            var resRect = res.getBoundingClientRect();
+            var mainRect = main.getBoundingClientRect();
+            // 守卫：布局未稳时表顶会瞬态为 0/负值，此时算出的值（过大）会写死且难被纠正，
+            // 故跳过；正常情况主区有标题/Tab/控制行，表顶必远高于主区顶（≈241px）
+            if (resRect.top < mainRect.top + 50) return;
+            // 注意：本脚本在 css_inject 隐藏容器内的 iframe 中执行，iframe 自身 viewport
+            // 为 0 高，故视口高必须取【父窗口】的，不能用 window.innerHeight（=0 会算成负数）
+            var vh = (window.parent && window.parent.innerHeight) || window.innerHeight;
+            var pb = parseFloat(getComputedStyle(main).paddingBottom) || 0;
+            // 选中提示 alert（表格与吸底工具栏之间，删除失败等也可能额外弹 alert）；
+            // 取主区内全部 alert 累加，避免缺算导致表格顶到工具栏
+            var alerts = doc.querySelectorAll('[data-testid="stMain"] [data-testid="stAlert"]');
+            var alertH = 0;
+            for (var i = 0; i < alerts.length; i++) alertH += alerts[i].offsetHeight;
+            var avail = vh - resRect.top - alertH - pb - 8;   // 8px 缓冲
+            if (avail >= 120) doc.documentElement.style.setProperty('--list-avail-h', Math.round(avail) + 'px');
+        } catch (e) { }
+    }
+    var _calcT = null;
+    function scheduleCalc() { clearTimeout(_calcT); _calcT = setTimeout(calcListHeight, 60); }
     sync();
-    window.addEventListener('resize', sync);
-    window.addEventListener('load', sync);
+    window.addEventListener('resize', function () { sync(); calcListHeight(); });
+    window.addEventListener('load', function () { sync(); calcListHeight(); });
     // 兜底触发：本 iframe 在 css_inject 隐藏容器内（display:none 不影响执行），
     // 但执行时机可能早于侧边栏渲染——实测会量到未渲染时的全宽 left=0 且此后
     // 无属性变化可再触发。故加延迟重试 + load 事件；下面的 ResizeObserver
     // 负责侧边栏折叠/展开（主区宽度变化）这类不伴随属性变化的布局变动。
-    [0, 100, 300, 800, 1500].forEach(function (t) { setTimeout(sync, t); });
+    [0, 100, 300, 800, 1500].forEach(function (t) { setTimeout(function () { sync(); calcListHeight(); }, t); });
     var doc = window.parent.document;
     var main = doc && doc.querySelector('section[data-testid="stMain"]');
     if (main && 'ResizeObserver' in window) {
-        new ResizeObserver(sync).observe(main);
+        new ResizeObserver(function () { sync(); calcListHeight(); }).observe(main);
     }
     if (main && 'MutationObserver' in window) {
-        new MutationObserver(sync).observe(main, { attributes: true, attributeFilter: ['style', 'class'] });
+        // 属性观察：侧边栏折叠/展开（改 main 的 style/class）；
+        // childList+subtree：选中行变化会增删 alert（height 随之变）或切换视图，需重算表格高度
+        new MutationObserver(function () { scheduleCalc(); }).observe(main, { attributes: true, childList: true, subtree: true, attributeFilter: ['style', 'class'] });
     }
 })();
 </script>

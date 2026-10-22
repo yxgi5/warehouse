@@ -105,11 +105,16 @@ header 与工具栏同步跟随到 `left=0/w=1904`）。
 顶边即它），属主题点缀非空白；`stSidebarCollapseButton` 实测 0×0 不可交互，为 Streamlit
 1.40 自身行为、与本次改动无关（改动前后截图均无折叠箭头）。
 
-### Step 2 表格高度视口自适应（核心，中风险）
+**TODO（微调项，待用户确认）**：Deploy 按钮「贴边」——header 已压到 36px、按钮 2..34，底边
+已贴 header 底；若要更紧只能让按钮与 header 上下边距对称（如 top:2 不变，header 不变；
+或进一步把按钮上移、header 降到 32px 让按钮正好填满）。属纯视觉微调、风险极低，未做以
+免误伤点击热区；用户明确要再紧时一行改动即可。
 
-思路：JS 实测「表格可用高度」→ 写 CSS 变量 → CSS `!important` 覆盖 `stDataFrameResizable` 的内联高度。
+### Step 2 表格高度视口自适应（核心，中风险）—— 已完成
 
-- `ui/items_tab.py` / `ui/containers_tab.py`：用 `st.container(key="item_list_wrap")` / `st.container(key="container_list_wrap")` 包住 `st.dataframe`（获得稳定类名供 CSS/JS 定位）；`height` 参数保留 300 作兜底。
+思路：JS 实测「表格可用高度」→ 写 CSS 变量 → CSS `!important` 覆盖 `stDataFrameResizable` 的内联高度（`height:300px`）。
+
+- `ui/items_tab.py` / `ui/containers_tab.py`：用 `st.container(key="item_list_wrap")` / `st.container(key="container_list_wrap")` 包住 `st.dataframe`（获得稳定类名供 CSS/JS 定位）；`height` 参数保留 300 作兜底（无 JS 时）。
 - `app.py` `<style>`：
   ```css
   .st-key-item_list_wrap [data-testid="stDataFrameResizable"],
@@ -118,10 +123,14 @@ header 与工具栏同步跟随到 `left=0/w=1904`）。
   }
   ```
 - `app.py` JS（扩展现有 sync）新增 `calcListHeight()`：
-  `avail = 主区高度 − (表格容器 top − 主区 top) − 底部预留`
-  底部预留 = 工具栏高度（`.st-key-list_toolbar` / `.st-key-container_toolbar` 的 `offsetHeight`，隐藏为 0）
-  \+ 提示行高度（表格之后的 `stAlert` `offsetHeight`，无为 0）+ 8px 余量；写入 `--list-avail-h`。
-  触发：初次 / resize / MutationObserver（扩展到 childList+subtree，捕获提示行三态切换引起的高度变化）。
+  `avail = 父窗口视口高 − 表顶 − 选中提示 alert 总高 − 主区 padding-bottom(80px) − 8px 缓冲`
+  吸底工具栏 `position:fixed` 不入流，故不计入；表格只填到 alert 之上、工具栏之下，无页面滚动条；
+  alert 取主区内**全部** `stAlert` 累加（删除失败等可能额外弹一个）。
+- 触发：初次 / resize / 延迟重试(0,100,300,800,1500ms) / `ResizeObserver`(main，覆盖侧边栏折叠与窗口高度变化) / `MutationObserver`(main，childList+subtree，覆盖选中行增删 alert、切换视图)。
+- **两个实测踩坑（已修复）**：
+  1. 同步脚本在 `css_inject` 隐藏容器内 iframe 执行，iframe 自身 viewport 为 0 高 → `window.innerHeight`=0 会把 avail 算成负数。必须用**父窗口**视口高 `window.parent.innerHeight`。
+  2. 布局未稳时 `res.getBoundingClientRect().top` 会瞬态为 0（先于标题/Tab 渲染），此时算出的 avail 过大（如容器 Tab 曾算成 605px 致表格底部被裁切、无滚动条掩盖溢出）。加守卫：表顶 < 主区顶+50px 时跳过本次、不写脏值；正常布局表顶≈241px 必通过。
+- **实测结果（selenium，1920 宽）**：物品/容器两 Tab 在视口高 700/900/1300 下 `stDataFrameResizable` 高度分别为 164/364/764px，`scrollOverflow=0`（无页面滚动）；`avail≥120` 才写变量，过矮窗口回退 300px 兜底。i18n 17 / data-layer 139 / smoke / e2e 全绿。
   表格容器不存在时（卡片视图/详情页）不计算。
 - **验收**：e2e 全绿且卡片视图不受影响；用户本地确认 1080p 全屏无页面滚动条、4K 表格更高、缩放连续自适应。
 - **风险与降级**：`!important` 覆盖 Streamlit 内联高度，升级版本可能失效 → 选择器与理由写注释；失效时退回 `height=300`（页面可滚，不破功能）。

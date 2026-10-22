@@ -374,28 +374,30 @@ def render_list_view(conn, df_all, total_items, container_options):
     df_display['price'] = df_display['price'].apply(
         lambda x: f"¥{x:.2f}" if pd.notna(x) and x else "")
 
-    # --- 表格（高度与容器列表一致：固定 300，不提供滑块）---
+    # --- 表格（Step 2：包一层带 key 容器供 CSS/JS 定位，高度自适应视口；
+    # height=300 仅作无 JS 时的兜底）---
     # 表格先渲染，下方工具栏直接读 event.selection.rows 即本轮最新选中，
     # 不存在"选中结果滞后一帧"的问题；同时写回 session_state 供批量删除后清空。
-    event = st.dataframe(
-        df_display,
-        key="item_table",
-        selection_mode="multi-row",
-        on_select="rerun",
-        use_container_width=True,
-        height=300,
-        hide_index=True,
-        column_config={
-            "id": None,
-            "item_no": i18n.t("form.item_no"),
-            "name": i18n.t("form.name"),
-            "container_name": i18n.t("form.container"),
-            "purchase_date": i18n.t("form.purchase_date"),
-            "platform": i18n.t("form.platform"),
-            "price": i18n.t("form.price"),
-            "tags": i18n.t("form.tags")
-        }
-    )
+    with st.container(key="item_list_wrap"):
+        event = st.dataframe(
+            df_display,
+            key="item_table",
+            selection_mode="multi-row",
+            on_select="rerun",
+            use_container_width=True,
+            height=300,
+            hide_index=True,
+            column_config={
+                "id": None,
+                "item_no": i18n.t("form.item_no"),
+                "name": i18n.t("form.name"),
+                "container_name": i18n.t("form.container"),
+                "purchase_date": i18n.t("form.purchase_date"),
+                "platform": i18n.t("form.platform"),
+                "price": i18n.t("form.price"),
+                "tags": i18n.t("form.tags")
+            }
+        )
     # 当前轮选中：过滤越界旧索引（删除/筛选后行号可能失效）
     selected_indices = [i for i in event.selection.rows if 0 <= i < len(df_all)]
     selected_item_ids = df_all.iloc[selected_indices]['id'].tolist()

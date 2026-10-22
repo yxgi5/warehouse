@@ -380,22 +380,23 @@ def render_browse(conn, containers_df):
         containers_df.set_index('id')['name'].to_dict()
     ).fillna(i18n.t("containers.none_parent"))
 
-    # 显示表格（带选择）
-    event = st.dataframe(
-        df_display[['id', 'name', 'parent_name', 'location']],
-        selection_mode="multi-row",
-        on_select="rerun",
-        use_container_width=True,
-        height=300,
-        hide_index=True,
-        column_config={
-            "id": None,
-            "name": i18n.t("containers.col_name"),
-            "parent_name": i18n.t("containers.col_parent"),
-            "location": i18n.t("containers.col_location")
-        },
-        key="container_list"
-    )
+    # 显示表格（带选择）；Step 2 包一层带 key 容器，高度自适应视口（height=300 兜底）
+    with st.container(key="container_list_wrap"):
+        event = st.dataframe(
+            df_display[['id', 'name', 'parent_name', 'location']],
+            selection_mode="multi-row",
+            on_select="rerun",
+            use_container_width=True,
+            height=300,
+            hide_index=True,
+            column_config={
+                "id": None,
+                "name": i18n.t("containers.col_name"),
+                "parent_name": i18n.t("containers.col_parent"),
+                "location": i18n.t("containers.col_location")
+            },
+            key="container_list"
+        )
 
     selected_indices = event.selection.rows
     # 安全过滤：只保留有效索引，防止删除后遗留旧索引
