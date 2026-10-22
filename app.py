@@ -66,21 +66,21 @@ with st.container(key="css_inject"):
 /* header（Deploy + 菜单）实测是 <header data-testid="stHeader">（非 section，
    之前写成 section 导致整条规则从未生效）。原 position:fixed;left:0;right:0
    独占整行窗体、高 3.75rem。这里：① 收进主内容区（与吸底工具栏同宽，复用
-   --toolbar-left/--toolbar-width）；② 高度压到 2.5rem——Deploy 按钮实高 32px、
-   原在 header 内 top:20px，把 stToolbar 上移到 4px 后 40px 足够容纳，
-   顶部横带从 60px 进一步收窄到 40px。 */
+   --toolbar-left/--toolbar-width）；② 高度压到 2.25rem(36px)——Deploy 按钮实高 32px、
+   原在 header 内 top:20px，把 stToolbar 上移到 2px 后 36px 足够容纳（按钮 2..34，
+   底边贴 header 底），顶部横带从 60px 进一步收窄到 36px。 */
 header[data-testid="stHeader"] {
     left: var(--toolbar-left, 21rem) !important;
     width: var(--toolbar-width, calc(100vw - 21rem)) !important;
     right: auto !important;
-    height: 2.5rem !important;
+    height: 2.25rem !important;
 }
 header[data-testid="stHeader"] [data-testid="stToolbar"] {
-    top: 4px !important;
+    top: 2px !important;
 }
-/* 主区顶部只留 header 高度(2.5rem)+4px 间隙，标题紧贴 header 下方 */
+/* 主区顶部只留 header 高度(2.25rem=36px)+2px 间隙，标题紧贴 header 下方 */
 [data-testid="stMain"] .stMainBlockContainer {
-    padding-top: 2.75rem !important;
+    padding-top: 2.375rem !important;
 }
 /* 承载本段 <style> 的 markdown 元素容器实测本身高 41.6px，且作为
    stVerticalBlock 的 flex 子项还吃 16px gap——合计把标题往下顶 57.6px，

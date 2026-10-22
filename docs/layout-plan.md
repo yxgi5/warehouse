@@ -73,7 +73,7 @@
 
 | 来源 | 实测占位 | 处理 |
 |---|---|---|
-| block 容器 `padding-top` | Streamlit styled class 施加（wide 2.1rem / `addPaddingForHeader` 4.75rem / `showPadding` 6rem），普通选择器压不过 | `!important` 压到 `2.75rem`（= 新 header 高 40px + 4px 间隙） |
+| block 容器 `padding-top` | Streamlit styled class 施加（wide 2.1rem / `addPaddingForHeader` 4.75rem / `showPadding` 6rem），普通选择器压不过 | `!important` 压到 `2.375rem`（= 最终 header 高 36px + 2px 间隙，按用户「能更紧就更紧」反馈二次收紧） |
 | **CSS 注入 markdown 的元素容器** | 高 41.6px + flex gap 16px = **57.6px 纯浪费** | 包进 `st.container(key="css_inject")` 后整体 `display:none`——`<style>` 在隐藏容器内依然全局生效（已实测：块内 padding 修改仍生效） |
 | **`components.html` 同步 iframe 的元素容器** | iframe 本身高 0，但元素容器占 25.6px + gap 16px = **41.6px** | 挪进同一 `css_inject` 隐藏容器；隐藏 iframe 的 JS 照常执行（实测变量仍被写入） |
 
@@ -81,8 +81,9 @@
 
 1. **选择器错误**：header 实测是 `<header data-testid="stHeader">`（`z-index:999990`、
    `position:fixed`），此前写成 `section[...]` 导致上一轮的「收进主区」规则**从未生效**。
-2. **高度压缩**：3.75rem(60px) → **2.5rem(40px)**——Deploy 按钮实高 32px、原在 header 内
-   `top:20px`，把 `[data-testid="stToolbar"]` 上移到 `top:4px` 后 40px 足够容纳。
+2. **高度压缩**：3.75rem(60px) → 2.5rem(40px) → **2.25rem(36px)（用户反馈二次收紧）**——
+   Deploy 按钮实高 32px、原在 header 内 `top:20px`，把 `[data-testid="stToolbar"]` 上移到
+   `top:2px` 后 36px 足够容纳（按钮 2..34，底边贴 header 底）。
 
 **同步 JS 增强（隐藏容器内 iframe 执行更早，会量到侧边栏渲染前的全宽 left=0 且此后无属性
 变化可再触发，导致 header/工具栏错位到全宽）**：`sync()` 触发点补齐 `load` 事件、
@@ -92,10 +93,11 @@ header 与工具栏同步跟随到 `left=0/w=1904`）。
 
 **实测结果（selenium，1920×900 视口）**：
 
-- 主区标题 top：**121.6px → 44px**（用户截图环境实测约 156px，因其 block padding 走了
-  Streamlit 默认 6rem 路径）；stTabs top 210.4 → 132.8，一屏多显示约两行表格数据。
-- header：`left=336, w=1568, h=40`——与吸底工具栏（`left=336, w=1568`）完全对齐，
-  不再独占整行窗体，侧边栏顶部随之释放。
+- 主区标题 top：**121.6px → 38px**（首轮收敛 44px，用户反馈「能更紧就更紧」后二次收紧至 38；
+  用户截图环境实测约 156px，因其 block padding 走了 Streamlit 默认 6rem 路径）；
+  stTabs top 210.4 → 126.8，一屏多显示约两行表格数据。
+- header：`left=336, w=1568, h=36`——与吸底工具栏（`left=336, w=1568`）完全对齐，
+  不再独占整行窗体，侧边栏顶部随之释放。用户确认 Deploy/⋮ 正常可点。
 - 隐藏容器（`css_inject`，`display:none, h=0`）内 `<style>` 与 iframe JS 均正常生效。
 - 回归：i18n 17、data-layer 139、smoke 224 项、e2e 全部 PASS（AppTest 在隔离副本实测）。
 
