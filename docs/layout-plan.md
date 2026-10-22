@@ -218,3 +218,17 @@ header 与工具栏同步跟随到 `left=0/w=1904`）。
   `items.staged_images`（暂存区标题）。
 - **实测（selenium 全流程）**：选 2 图 → 暂存预览 2 张 → 上移交换 → 保存 → 自动打开
   详情页、详情 2 张图、`item_images` 落库 2 条。smoke / e2e / i18n 17 / data-layer 139 全绿。
+
+### Dashboard 价值看板（用户追加需求，已完成）
+
+用户要求：看板增加「Items by Container 的价值看板」与「按采购年份价值分布」两张价值图
+（与原有数量图成对）。
+
+- `ui/dashboard_tab.py`：在「各容器物品数量」「购买年份分布」两张数量图后，各加一张价值图——
+  直接对 `get_filtered_data` 返回的 DataFrame 做 `groupby(...)[‘price’].sum()`（沿用既有
+  pandas 内联聚合风格，无需新增 repo 函数）；容器价值按价值降序、年份价值按年份升序，
+  均经全局 search / tag_filter 过滤。空数据时与既有图一致显示「无数据」占位。
+- `i18n.py` 新增 `dash.container_value`（📦 各容器价值 / Value by Container）、
+  `dash.year_value`（📅 按采购年份价值 / Value by Purchase Year）、`dash.col_value`（价值 / Value）。
+- **实测（selenium）**：切到 Dashboard 标签，两张新看板文案存在、vega 图表共 4 张、无异常；
+  i18n 键中英配对、smoke、data-layer 139 全绿。

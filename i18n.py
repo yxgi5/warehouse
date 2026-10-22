@@ -248,6 +248,9 @@ TRANSLATIONS = {
         "dash.hot_tags": "🏷️ 热门标签",
         "dash.col_tag": "标签",
         "dash.col_times": "出现次数",
+        "dash.container_value": "📦 各容器价值（Value by Container）",
+        "dash.year_value": "📅 按采购年份价值（Value by Purchase Year）",
+        "dash.col_value": "价值",
 
         # ==================== 时间线 / 标签墙 / 容器树 ====================
         "timeline.expander": "📆 {year}年 ({count}件)",
@@ -488,6 +491,9 @@ TRANSLATIONS = {
         "dash.hot_tags": "🏷️ Hot Tags",
         "dash.col_tag": "Tag",
         "dash.col_times": "Occurrences",
+        "dash.container_value": "📦 Value by Container",
+        "dash.year_value": "📅 Value by Purchase Year",
+        "dash.col_value": "Value",
 
         # ==================== Timeline / Tags / Tree ====================
         "timeline.expander": "📆 {year} ({count} items)",
