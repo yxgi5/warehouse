@@ -98,6 +98,13 @@ python -m streamlit run app.py
 - **`update_item` / `add_item` 的图片逻辑合并**到 `attach_item_images`（行为不变：内容去重 + 物品内同内容只关联一次）；容器**新增**态的上传框仍留在表单内（容器尚无 id，无法先附图后存）。
 - **测试**：`test_data_layer.py` 覆盖 `attach_item_images`（张数/sort_order 续接/池去重/空列表/非法文件回滚无半拉关联/`update_item` 回归）与 webp 合法头通过、伪装 webp 拒绝；`test_e2e.py` 覆盖物品与容器编辑态的即时添加入口与未选文件提示。数据层单测增至 139 项。
 
+## 卡片视图分页档位上调（Phase 9）
+
+卡片是 4 列网格，「每页数量」档位取 4 的倍数（翻倍梯）以保证每页都是整行、不出现半行孤卡：
+`[48, 96, 192, 384]`，**默认 96**（24 行；2882 件物品约 30 页，原 24/页 要 121 页）。
+物品与容器卡片视图同梯同默认（`ui/items_tab.py` / `ui/containers_tab.py` 各一处）。
+不用 50/100/200/500：非 4 的倍数会出孤卡，且 500 卡一页=500 张图+2000+ 元素，首屏绘制与滚动都失控。
+
 ## 提交规范（Git Convention）
 
 - **前缀**：统一 Conventional Commits——`feat / fix / refactor / chore / docs / style / test`，带 scope 更佳，如 `feat(i18n)`。
