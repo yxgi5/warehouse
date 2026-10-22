@@ -66,6 +66,43 @@
 - **验收**：AppTest 断言浏览态 radio 仍为 1 个、两个新增按钮都在、0 异常；e2e 全绿（标签文本断言已改查按钮存在）；用户本地目视确认。
 - **风险**：低。`label_visibility="collapsed"`、`st.container(key=)` 在 Streamlit 1.40 可用；`!important` 覆盖 Streamlit 内联/生成 class 为通用手法。
 
+### Step 1.5 顶部空白实测收敛（selenium 无头实测，已完成）
+
+用户截图反馈「顶部红框区域整条去掉」。此轮不再推断，直接用 selenium + 本机 Chrome 无头
+打开应用量 DOM，拿到每层真实几何，找到三处空间来源并逐一消除：
+
+| 来源 | 实测占位 | 处理 |
+|---|---|---|
+| block 容器 `padding-top` | Streamlit styled class 施加（wide 2.1rem / `addPaddingForHeader` 4.75rem / `showPadding` 6rem），普通选择器压不过 | `!important` 压到 `2.75rem`（= 新 header 高 40px + 4px 间隙） |
+| **CSS 注入 markdown 的元素容器** | 高 41.6px + flex gap 16px = **57.6px 纯浪费** | 包进 `st.container(key="css_inject")` 后整体 `display:none`——`<style>` 在隐藏容器内依然全局生效（已实测：块内 padding 修改仍生效） |
+| **`components.html` 同步 iframe 的元素容器** | iframe 本身高 0，但元素容器占 25.6px + gap 16px = **41.6px** | 挪进同一 `css_inject` 隐藏容器；隐藏 iframe 的 JS 照常执行（实测变量仍被写入） |
+
+**header 两个关键修正：**
+
+1. **选择器错误**：header 实测是 `<header data-testid="stHeader">`（`z-index:999990`、
+   `position:fixed`），此前写成 `section[...]` 导致上一轮的「收进主区」规则**从未生效**。
+2. **高度压缩**：3.75rem(60px) → **2.5rem(40px)**——Deploy 按钮实高 32px、原在 header 内
+   `top:20px`，把 `[data-testid="stToolbar"]` 上移到 `top:4px` 后 40px 足够容纳。
+
+**同步 JS 增强（隐藏容器内 iframe 执行更早，会量到侧边栏渲染前的全宽 left=0 且此后无属性
+变化可再触发，导致 header/工具栏错位到全宽）**：`sync()` 触发点补齐 `load` 事件、
+`[0,100,300,800,1500]ms` 延迟重试，并新增 `ResizeObserver` 观察主区——侧边栏折叠/展开
+只改主区宽度、不伴随属性变化，属性观察抓不到，宽度观察可以（已实测：把侧边栏宽度压成 0，
+header 与工具栏同步跟随到 `left=0/w=1904`）。
+
+**实测结果（selenium，1920×900 视口）**：
+
+- 主区标题 top：**121.6px → 44px**（用户截图环境实测约 156px，因其 block padding 走了
+  Streamlit 默认 6rem 路径）；stTabs top 210.4 → 132.8，一屏多显示约两行表格数据。
+- header：`left=336, w=1568, h=40`——与吸底工具栏（`left=336, w=1568`）完全对齐，
+  不再独占整行窗体，侧边栏顶部随之释放。
+- 隐藏容器（`css_inject`，`display:none, h=0`）内 `<style>` 与 iframe JS 均正常生效。
+- 回归：i18n 17、data-layer 139、smoke 224 项、e2e 全部 PASS（AppTest 在隔离副本实测）。
+
+**遗留（不影响诉求）**：顶部约 5px 的主题装饰线 `stDecoration` 仍为全窗宽（用户截图红框
+顶边即它），属主题点缀非空白；`stSidebarCollapseButton` 实测 0×0 不可交互，为 Streamlit
+1.40 自身行为、与本次改动无关（改动前后截图均无折叠箭头）。
+
 ### Step 2 表格高度视口自适应（核心，中风险）
 
 思路：JS 实测「表格可用高度」→ 写 CSS 变量 → CSS `!important` 覆盖 `stDataFrameResizable` 的内联高度。
