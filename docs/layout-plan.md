@@ -172,6 +172,13 @@ header 与工具栏同步跟随到 `left=0/w=1904`）。
   4. **普通流有 82px 杂项占位**（fs_state 容器 + 2px 分隔线 + tabpanel padding 16 + flex gap 16），把流内表格顶下去、底部裁掉 82px → 表格 fixed 出流（top:0/height:100vh 基准），无视全部流内杂项。
 - **实测（selenium，1920×900）**：进入全屏表格 fixed top=0、高 689 = 746−57（底部精确预留工具栏），工具栏可见 `z-index 1002`、顶边 689 = 表格底边 689 零重叠、4 个操作按钮常驻（未选中禁用同正常态）；标题/Tab 栏/控制行/提示隐藏、侧边栏保留、退出按钮可见；ESC 与浮动按钮两条退出路径都精确恢复（表高 367）；容器 Tab 同样验证通过。smoke / e2e / i18n 17 / data-layer 139 全绿。
   注：全屏态 calcListHeight 被「表顶−主区顶 < 50」守卫自动跳过（表格 fixed 后表顶=主区顶），不会污染正常态表高。
+- **Step 3.1 微调（用户反馈）**：
+  1. 退出按钮盖住 ITEM No. 列头——`fs_exit` 容器虽 fixed `right:18`，但 Streamlit 块级包装链
+     撑成 fill-available（实测 1402px），按钮落在容器左缘 → 视觉在表格左上。修法：容器及内层
+     `[data-testid]`/`>div` 全部 `width:max-content`，容器收缩为按钮宽（152px）贴右缘
+     （实测 left 1729 / right 1880）。
+  2. 按钮文案「⛶ 全屏/Fullscreen」改「⛶ 最大化/Maximize」，退出键同步「退出最大化 (Esc)」
+     （用户认为最大化更符合"表格铺满主内容区"的意图）。
 
 - `ui/items_tab.py` / `ui/containers_tab.py`：View Mode 行加「⛶ 全屏 / 退出全屏」按钮 → 切 `st.session_state.list_fullscreen` + rerun。
 - `app.py`：按 session_state 注入 `:root { --list-fullscreen: 1|0 }`；JS 读该变量给 `body` toggle class `wh-list-fullscreen`。

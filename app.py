@@ -232,10 +232,14 @@ body.wh-list-fullscreen .st-key-container_list_wrap [data-testid="stDataFrameRes
     top: 10px;
     right: 18px;
     z-index: 1002;
-    /* max-content：fixed 容器 + use_container_width 子按钮会互相撑成整行宽 */
-    width: max-content;
     display: none !important;
 }
+/* 容器及内层包装链全部收缩到内容宽：Streamlit 的块级包装会撑成 fill-available
+   （实测 1402px），按钮落在容器左缘 → fixed right:18 反而显示在表格左上、
+   盖住 ITEM No. 列头。全部 max-content 后容器收缩为按钮宽，贴右缘。 */
+.st-key-fs_exit,
+.st-key-fs_exit [data-testid],
+.st-key-fs_exit > div { width: max-content !important; }
 body.wh-list-fullscreen .st-key-fs_exit { display: block !important; }
 .st-key-fs_exit button { white-space: nowrap !important; }
 </style>
