@@ -163,8 +163,11 @@ header[data-testid="stHeader"] [data-testid="stToolbar"] {
 }
 /* Step 3 全屏态（body.wh-list-fullscreen）：表格铺满主内容区，其余 chrome 全隐。
    隐藏项：页面标题(stHeadingWithActionElements)、Tabs 栏(stTabs)、header(Deploy)、
-   浏览态控制行(items_viewrow/containers_viewrow)、选中提示、吸底工具栏。
-   fixed 相对 stMain（带 transform 的祖先 = 主内容矩形），故表格 top:0/bottom:0
+   浏览态控制行(items_viewrow/containers_viewrow)、选中提示。
+   吸底工具栏【不隐藏】——用户反馈：全屏选中行后需要它来 查看详情/编辑/删除/导出，
+   故全屏态保留并抬高 z-index 压在表格(z-index 1001)之上（工具栏底部悬浮，
+   与右上角退出按钮不冲突）。
+   fixed 相对 stMain（带 transform 的祖先 = 主内容矩形），故表格 top:0/height:100vh
    即铺满主内容区（与 --toolbar-left/width 同坐标系，无需感知侧边栏/header）。 */
 /* 全屏态隐藏项：仅隐藏 Tab「栏」(role=tablist)——注意面板也在 stTabs 容器内，
    若整块 display:none 会把当前表格面板也灭掉（计算高度正常但 offsetHeight=0）。 */
@@ -174,10 +177,13 @@ body.wh-list-fullscreen header[data-testid="stHeader"],
 body.wh-list-fullscreen .st-key-items_viewrow,
 body.wh-list-fullscreen .st-key-containers_viewrow,
 body.wh-list-fullscreen .st-key-list_hint,
-body.wh-list-fullscreen .st-key-container_hint,
+body.wh-list-fullscreen .st-key-container_hint {
+    display: none !important;
+}
+/* 全屏态吸底工具栏：压到全屏表格(z-index 1001)之上，保证选中行后可操作 */
 body.wh-list-fullscreen .st-key-list_toolbar,
 body.wh-list-fullscreen .st-key-container_toolbar {
-    display: none !important;
+    z-index: 1002 !important;
 }
 /* 全屏态：强制 stMain 撑满视口（chrome 已隐藏，避免塌陷）；overflow 隐藏防误导滚动。 */
 body.wh-list-fullscreen [data-testid="stMain"] {
@@ -203,7 +209,9 @@ body.wh-list-fullscreen .st-key-container_list_wrap {
     left: var(--toolbar-left, 21rem) !important;
     width: var(--toolbar-width, calc(100vw - 21rem)) !important;
     flex: none !important;
-    height: 100vh !important;
+    /* 100vh − 57(工具栏高53+bottom4)：全屏态工具栏保留且悬浮底部，
+       表格若仍吃满 100vh，最后一行下半会被工具栏盖住 → 预留出这块高度 */
+    height: calc(100vh - 57px) !important;
     margin: 0 !important;
     z-index: 1001 !important;
     background: var(--toolbar-bg, #fff);
@@ -212,8 +220,9 @@ body.wh-list-fullscreen .st-key-container_list_wrap {
 body.wh-list-fullscreen .st-key-item_list_wrap [data-testid="stDataFrameResizable"],
 body.wh-list-fullscreen .st-key-container_list_wrap [data-testid="stDataFrameResizable"] {
     flex: none !important;
-    /* 用 100vh 而非 100%：嵌套 flex 下百分比高度解析不到父级高度，会塌成内容高 */
-    height: 100vh !important;
+    /* 用 100vh 基准而非 100%：嵌套 flex 下百分比高度解析不到父级高度，会塌成内容高；
+       同步扣掉保留的吸底工具栏 57px，与外层 wrap 高度一致 */
+    height: calc(100vh - 57px) !important;
     min-height: 0 !important;
 }
 /* 全屏态退出按钮：常驻 DOM（display:none 隐藏），仅全屏可见、置右上角 */

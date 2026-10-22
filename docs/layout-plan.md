@@ -163,14 +163,15 @@ header 与工具栏同步跟随到 `left=0/w=1904`）。
 - `app.py`：
   - `fs_state` 隐藏容器：`st.markdown("<style>:root{--list-fullscreen:0|1}</style>")` 把 session_state 透传给前端（同 css_inject 模式隐藏，避免占顶部间隙）。
   - `fs_exit` 浮动退出按钮：常驻 DOM（默认 display:none，全屏态 fixed 右上角显示），点击清 `list_fullscreen`；容器 `width:max-content`（fixed 容器 + use_container_width 子按钮会互相撑成整行宽）。
-  - 全屏 CSS：隐藏页面标题(`stHeadingWithActionElements`)、**仅 Tab 栏**(`stTabs [role=tablist]`)、header、两个控制行、提示行、工具栏；表格 wrap `fixed + top:0 + height:100vh + left/width 复用 --toolbar-*`。
+  - 全屏 CSS：隐藏页面标题(`stHeadingWithActionElements`)、**仅 Tab 栏**(`stTabs [role=tablist]`)、header、两个控制行、提示行；**吸底工具栏保留**（用户反馈：全屏选中行后仍需 查看详情/编辑/删除/导出）并 z-index 1002 压在表格 1001 之上；表格 wrap `fixed + top:0 + height:calc(100vh - 57px) + left/width 复用 --toolbar-*`（57 = 工具栏 53 + bottom 4，预留避免末行被工具栏遮住下半）。
   - JS：`applyFullscreen()` 读变量切 body class；主区 MutationObserver 加 `characterData`（变量由 `<style>` 文本注入、非 :root inline style，`:root` style 观察者收不到）；ESC 监听 → 找 `.st-key-fs_exit button` click()。
 - **四个实测踩坑（均有 selenium 数据）**：
   1. **面板在 stTabs 容器内**：整块 `stTabs{display:none}` 会把当前表格面板一起灭掉（计算高度正常但 offsetHeight=0，前四轮"fixed 塌缩"全是它的假象）→ 只隐藏 `[role=tablist]`。
   2. **flex-basis:0 压过 height**：Streamlit 给 wrap/resizable 设 `flex:1 1 0`，flex 主轴尺寸优先于 `height`，`height:100vh` 不生效（表格 26px）→ `flex:none !important` 解除。
-  3. **嵌套 flex 下百分比高度不解析**：resizable `height:100%` 塌成内容高 12px → 改 `height:100vh`。
-  4. **普通流有 82px 杂项占位**（fs_state 容器 + 2px 分隔线 + tabpanel padding 16 + flex gap 16），把流内表格顶下去、底部裁掉 82px → 表格 fixed 出流（top:0/height:100vh），无视全部流内杂项。
-- **实测（selenium，1920×900）**：进入全屏表格 fixed top=0、746px 恰满视口（resH=746），标题/Tab 栏/控制行/提示/工具栏全隐、侧边栏保留、退出按钮可见；ESC 与浮动按钮两条退出路径都精确恢复（表高 367）；容器 Tab 同样验证通过。smoke / e2e / i18n 17 / data-layer 139 全绿。
+  3. **嵌套 flex 下百分比高度不解析**：resizable `height:100%` 塌成内容高 12px → 改 `100vh` 基准。
+  4. **普通流有 82px 杂项占位**（fs_state 容器 + 2px 分隔线 + tabpanel padding 16 + flex gap 16），把流内表格顶下去、底部裁掉 82px → 表格 fixed 出流（top:0/height:100vh 基准），无视全部流内杂项。
+- **实测（selenium，1920×900）**：进入全屏表格 fixed top=0、高 689 = 746−57（底部精确预留工具栏），工具栏可见 `z-index 1002`、顶边 689 = 表格底边 689 零重叠、4 个操作按钮常驻（未选中禁用同正常态）；标题/Tab 栏/控制行/提示隐藏、侧边栏保留、退出按钮可见；ESC 与浮动按钮两条退出路径都精确恢复（表高 367）；容器 Tab 同样验证通过。smoke / e2e / i18n 17 / data-layer 139 全绿。
+  注：全屏态 calcListHeight 被「表顶−主区顶 < 50」守卫自动跳过（表格 fixed 后表顶=主区顶），不会污染正常态表高。
 
 - `ui/items_tab.py` / `ui/containers_tab.py`：View Mode 行加「⛶ 全屏 / 退出全屏」按钮 → 切 `st.session_state.list_fullscreen` + rerun。
 - `app.py`：按 session_state 注入 `:root { --list-fullscreen: 1|0 }`；JS 读该变量给 `body` toggle class `wh-list-fullscreen`。
