@@ -416,8 +416,10 @@ def render_browse(conn, containers_df):
         st.success(i18n.t("containers.hint_many", n=selected_count))
 
     # --- 工具栏（sticky 吸底：页面滚动时固定在视口底部，见 app.py 全局样式）---
+    # Phase 10 Step1：「➕ 新增容器」已移到浏览态控制行（与物品一致，且卡片视图
+    # 下也有入口），工具栏只剩选中项操作：详情 / 编辑 / 删除 + 计数。
     with st.container(key="container_toolbar"):
-        col_tool1, col_tool2, col_tool3, col_tool4, col_tool5 = st.columns([3, 3, 3, 3, 5])
+        col_tool1, col_tool2, col_tool3, col_tool4 = st.columns([3, 3, 3, 5])
         with col_tool1:
             if selected_count == 1:
                 if st.button(i18n.t("containers.open_detail"), key="container_detail_active",
@@ -451,10 +453,6 @@ def render_browse(conn, containers_df):
             else:
                 st.button(i18n.t("items.delete"), key="container_delete_disabled", disabled=True, use_container_width=True)
         with col_tool4:
-            if st.button(i18n.t("containers.add_btn"), key="container_add_btn", use_container_width=True):
-                st.session_state.add_container_mode = True
-                st.rerun()
-        with col_tool5:
             st.caption(i18n.t("containers.list_count", total=len(containers_df), n=selected_count))
 
 
@@ -555,7 +553,8 @@ def render_card_view(conn, containers_df):
 
 
 def render(conn):
-    st.subheader(i18n.t("containers.title"))
+    # Phase 10 Step1：删掉「Container Management」整行——Tab 名已说明用途，
+    # 且该行与上方标题之间还有一大块空白，纯浪费纵向空间（物品 Tab 本就没有这行）。
 
     # 会话状态：编辑/新增/详情/视图模式
     if 'edit_container_id' not in st.session_state:
@@ -587,11 +586,27 @@ def render(conn):
         return
 
     # ========== 浏览模式：列表/卡片切换（命名与物品一致：list 视图） ==========
-    mode_labels = [i18n.t("containers.view_list"), i18n.t("containers.view_card")]
-    current_mode = st.session_state.container_view_mode if st.session_state.container_view_mode in ("list", "card") else "list"
-    mode_choice = st.radio(i18n.t("containers.switch_view"), mode_labels, horizontal=True,
-                           index=0 if current_mode == "list" else 1, key="container_view_radio")
-    st.session_state.container_view_mode = "list" if mode_choice == mode_labels[0] else "card"
+    # 控制行（Phase 10 Step1，与物品 Tab 同布局）：[View Mode 标签 | 视图 radio |
+    # ➕ 新增容器（水平居中）| 留白]；新增按钮从底部工具栏移到这里——与物品的
+    # 「➕ 新增物品」位置一致，且卡片视图下也有入口（原先只有列表视图有）。
+    with st.container(key="containers_viewrow"):
+        col_left, col_add, col_pad = st.columns([5, 2, 5])
+        with col_left:
+            sub_lbl, sub_mode = st.columns([1, 2])
+            with sub_lbl:
+                st.write(i18n.t("containers.switch_view"))
+            with sub_mode:
+                mode_labels = [i18n.t("containers.view_list"), i18n.t("containers.view_card")]
+                current_mode = st.session_state.container_view_mode if st.session_state.container_view_mode in ("list", "card") else "list"
+                mode_choice = st.radio(i18n.t("containers.switch_view"), mode_labels, horizontal=True,
+                                       label_visibility="collapsed",
+                                       index=0 if current_mode == "list" else 1,
+                                       key="container_view_radio")
+                st.session_state.container_view_mode = "list" if mode_choice == mode_labels[0] else "card"
+        with col_add:
+            if st.button(i18n.t("containers.add_btn"), key="container_add_btn", use_container_width=True):
+                st.session_state.add_container_mode = True
+                st.rerun()
 
     if st.session_state.container_view_mode == "list":
         render_browse(conn, containers_df)

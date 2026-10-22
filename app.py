@@ -48,14 +48,21 @@ st.markdown("""
     border-top: 1px solid rgba(128, 128, 128, 0.15);
     box-sizing: border-box;
 }
+/* Phase 10 Step1：收紧主区顶部空白。默认顶部内边距由 Streamlit 施加，但落在
+   哪一层（stMain 还是内层 .stMainBlockContainer）版本间不稳定，故两层都显式定值：
+   stMain=1rem、内层容器=0——无论默认在哪层，合计都是 1rem，不会叠加。 */
 section[data-testid="stMain"] {
+    padding-top: 1rem;
     padding-bottom: 80px;
+}
+section[data-testid="stMain"] .stMainBlockContainer {
+    padding-top: 0;
 }
 /* 工具栏按钮组作为整体在主内容区横向居中：侧边栏折叠/展开改变的是工具栏容器
    （fixed）的 left/width，按钮组中心始终保持在主内容区横向中心，不会跟着左移。
-   内部列比例 [2,2,2,2,5]（按钮×4 + 计数提示）配合 max-width 900px：
-   按钮列宽 ≈ 900×2/13 ≈ 138px，与初始吸底版本（8125898 主区 1104px 的 1/8）
-   一致，同时两侧保留留白，保持整体居中的观感。
+   内部列比例：物品 [2,2,2,2,5]（按钮×4 + 计数提示）、容器 [3,3,3,5]（按钮×3 +
+   计数提示，新增按钮已移至浏览态控制行，Phase 10 Step1）配合 max-width 900px，
+   两侧保留留白，保持整体居中的观感。
    Streamlit 的 stVerticalBlock 默认会被主题 max-width 限制，这里先让它占满 fixed 容器；
    stHorizontalBlock 再限制宽度并居中，防止按钮被压成竖排。 */
 .st-key-list_toolbar [data-testid="stVerticalBlock"],

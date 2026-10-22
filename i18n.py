@@ -176,7 +176,6 @@ TRANSLATIONS = {
         "import.err_price": "价格 '{val}' 不是数字",
 
         # ==================== 容器管理 ====================
-        "containers.title": "📦 容器管理",
         "containers.confirm_title": "⚠️ 确认删除",
         "containers.confirm_msg": "你确定要永久删除选中的 **{n}** 个容器吗？({names})",
         "containers.deleted": "已删除 {n} 个容器",
@@ -413,7 +412,6 @@ TRANSLATIONS = {
         "import.err_price": "Price '{val}' is not a number",
 
         # ==================== Containers ====================
-        "containers.title": "📦 Container Management",
         "containers.confirm_title": "⚠️ Confirm Delete",
         "containers.confirm_msg": "Delete the selected **{n}** containers permanently? ({names})",
         "containers.deleted": "Deleted {n} containers",

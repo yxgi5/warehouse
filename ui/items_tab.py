@@ -568,22 +568,30 @@ def render(conn, search, tag_filter, container_options):
         add_tab.render(conn, container_options)
         return
 
-    # --- 浏览态：子视图切换（内部值用稳定 list/card，显示文本按语言翻译）---
-    # 「➕ 新增物品」入口放在本 Tab 浏览态顶部（列表/卡片视图均常驻可见）：
-    # 不再作为独立 Tab，否则从任意 Tab 点进来都会直接进入新增页、覆盖当前
-    # 浏览状态，造成逻辑混乱。
-    col_mode, col_add = st.columns([2, 1])
-    with col_mode:
-        mode_labels = [i18n.t("items.view_list"), i18n.t("items.view_card")]
-        current_mode = st.session_state.view_mode if st.session_state.view_mode in ("list", "card") else "list"
-        mode_choice = st.radio(i18n.t("items.switch_view"), mode_labels, horizontal=True,
-                               index=0 if current_mode == "list" else 1)
-        st.session_state.view_mode = "list" if mode_choice == mode_labels[0] else "card"
-    with col_add:
-        st.write("")   # 与左侧 radio 选项行大致对齐（radio 标签占一行）
-        if st.button(i18n.t("items.add_btn"), key="items_add_btn", use_container_width=True):
-            st.session_state.add_item_mode = True
-            st.rerun()
+    # --- 浏览态控制行（Phase 10 Step1）---
+    # 布局：[View Mode 标签 | 视图 radio | ➕ 新增物品（水平居中）| 留白]
+    # - 标签与选项平铺一行：radio 自带 label 在 1.40 会独占一行，故标签独立成列、
+    #   radio 标签折叠（label_visibility="collapsed"）；
+    # - 「➕ 新增物品」不再贴最右侧（太靠右）：列比例 [5,2,5] 使按钮列中心正好落在
+    #   主内容区 50% 处，与吸底工具栏的中心线一致；
+    # - 整行包一层带 key 的 container，供 Step 3「列表全屏」整体隐藏。
+    with st.container(key="items_viewrow"):
+        col_left, col_add, col_pad = st.columns([5, 2, 5])
+        with col_left:
+            sub_lbl, sub_mode = st.columns([1, 2])
+            with sub_lbl:
+                st.write(i18n.t("items.switch_view"))
+            with sub_mode:
+                mode_labels = [i18n.t("items.view_list"), i18n.t("items.view_card")]
+                current_mode = st.session_state.view_mode if st.session_state.view_mode in ("list", "card") else "list"
+                mode_choice = st.radio(i18n.t("items.switch_view"), mode_labels, horizontal=True,
+                                       label_visibility="collapsed",
+                                       index=0 if current_mode == "list" else 1)
+                st.session_state.view_mode = "list" if mode_choice == mode_labels[0] else "card"
+        with col_add:
+            if st.button(i18n.t("items.add_btn"), key="items_add_btn", use_container_width=True):
+                st.session_state.add_item_mode = True
+                st.rerun()
 
     # 获取数据（用传入的 tag_filter，与 sidebar 同步后的 session_state 保持一致）
     df_all = repo.get_filtered_data(conn, search, tag_filter)
