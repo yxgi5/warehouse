@@ -38,7 +38,9 @@ with st.container(key="css_inject"):
 .st-key-list_toolbar,
 .st-key-container_toolbar {
     position: fixed;
-    bottom: 0;
+    /* bottom 抬 4px：实测贴底(bottom:0)时该 fixed 容器会给 stMain 贡献 ~3px 的
+       滚动溢出（主区因此常驻一根细滚动条）；抬离底边后贡献落到视口内，溢出消失 */
+    bottom: 4px;
     left: var(--toolbar-left, 21rem);
     width: var(--toolbar-width, calc(100vw - 21rem));
     background: var(--toolbar-bg, #ffffff);
@@ -78,9 +80,12 @@ header[data-testid="stHeader"] {
 header[data-testid="stHeader"] [data-testid="stToolbar"] {
     top: 2px !important;
 }
-/* 主区顶部只留 header 高度(2.25rem=36px)+2px 间隙，标题紧贴 header 下方 */
+/* 主区顶部只留 header 高度(2.25rem=36px)+2px 间隙，标题紧贴 header 下方；
+   padding-bottom 也要归零——实测 block 容器默认 11rem(176px) 底部内边距，
+   是「列表滚到底出现大空区」的来源（吸底工具栏避让已由 stMain 的 80px 承担） */
 [data-testid="stMain"] .stMainBlockContainer {
     padding-top: 2.375rem !important;
+    padding-bottom: 0 !important;
 }
 /* 承载本段 <style> 的 markdown 元素容器实测本身高 41.6px，且作为
    stVerticalBlock 的 flex 子项还吃 16px gap——合计把标题往下顶 57.6px，
@@ -156,37 +161,60 @@ header[data-testid="stHeader"] [data-testid="stToolbar"] {
     // Step 2：列表视图表格高度视口自适应。
     // 公式：可用高 = 视口高 − 表顶(视口坐标) − 选中提示 alert 高 − 主区 padding-bottom − 缓冲。
     // 吸底工具栏 position:fixed 不入流，故不计入；表格只填到 alert 之上、工具栏之下，无页面滚动条。
+    // Step 2：列表视图表格高度视口自适应（v2.1 相对 main 盒模型 + 流内末底边自校正）。
+    // 前两版教训（均有实测）：v1 用「视口高 − 表顶(视口坐标)」——stMain 才是真正的
+    // 滚动容器(overflow:auto)，它滚动过之后表顶读数被滚动量污染，表格越算越大
+    // （用户环境滚动条/大空区/提示行被顶走的根源）；v2 用 scrollingElement.scrollHeight
+    // 自校正——但根元素 scrollHeight 恒等于视口高（溢出发生在 stMain 内部），slack
+    // 恒为 0 导致表格一路收缩到下限，方向错误。
+    // v2.1：所有量都取相对 main 盒模型的差值（滚动量在差值中自动抵消，滚过也能安全重算）：
+    //   新表高 = 当前表高 + (main高 − paddingBottom − 缓冲 − 流内末元素底边)
+    // 流内末元素底边 = 表格/提示 alert 中更靠下者，自动涵盖表与 alert 间的 margin、
+    // 模型外的额外占位。数学上一步收敛且稳定（收敛后末底边恰在目标线上，增量归零）。
     function calcListHeight() {
         try {
             var doc = window.parent.document;
-            var wrap = doc.querySelector('.st-key-item_list_wrap, .st-key-container_list_wrap');
-            if (!wrap) return;                       // 卡片/详情页无表格，整条跳过
+            // 注意：Streamlit 非激活 Tab 的面板仍留在 DOM（display 隐藏），querySelector
+            // 按文档序会先命中隐藏的物品 wrap（高 0）→ 必须挑当前可见的那个
+            var wraps = doc.querySelectorAll('.st-key-item_list_wrap, .st-key-container_list_wrap');
+            var wrap = null;
+            for (var i = 0; i < wraps.length; i++) {
+                if (wraps[i].getBoundingClientRect().height > 0) { wrap = wraps[i]; break; }
+            }
+            if (!wrap) return;                       // 卡片/详情页/切换过渡中，整条跳过
             var res = wrap.querySelector('[data-testid="stDataFrameResizable"]');
             if (!res) return;
             var main = doc.querySelector('[data-testid="stMain"]');
             if (!main) return;
-            var resRect = res.getBoundingClientRect();
             var mainRect = main.getBoundingClientRect();
-            // 守卫：布局未稳时表顶会瞬态为 0/负值，此时算出的值（过大）会写死且难被纠正，
-            // 故跳过；正常情况主区有标题/Tab/控制行，表顶必远高于主区顶（≈241px）
-            if (resRect.top < mainRect.top + 50) return;
-            // 注意：本脚本在 css_inject 隐藏容器内的 iframe 中执行，iframe 自身 viewport
-            // 为 0 高，故视口高必须取【父窗口】的，不能用 window.innerHeight（=0 会算成负数）
-            var vh = (window.parent && window.parent.innerHeight) || window.innerHeight;
+            var resRect = res.getBoundingClientRect();
+            // 守卫：布局未稳时表顶会瞬态贴住主区顶，量出的可用高偏大、会把表格撑爆。
+            // 用 top 差值比较——滚动量在差值中抵消，stMain 滚过也能安全重算
+            if (resRect.top - mainRect.top < 50) return;
             var pb = parseFloat(getComputedStyle(main).paddingBottom) || 0;
-            // 选中提示 alert（表格与吸底工具栏之间，删除失败等也可能额外弹 alert）；
-            // 取主区内全部 alert 累加，避免缺算导致表格顶到工具栏
-            var alerts = doc.querySelectorAll('[data-testid="stMain"] [data-testid="stAlert"]');
-            var alertH = 0;
-            for (var i = 0; i < alerts.length; i++) alertH += alerts[i].offsetHeight;
-            var avail = vh - resRect.top - alertH - pb - 8;   // 8px 缓冲
-            if (avail >= 120) doc.documentElement.style.setProperty('--list-avail-h', Math.round(avail) + 'px');
+            // 流内末元素底边（相对 main 顶）：alert 可能有多个（删除失败等），取最靠下的
+            var flowEnd = resRect.bottom - mainRect.top;
+            var alerts = main.querySelectorAll('[data-testid="stAlert"]');
+            for (var i = 0; i < alerts.length; i++) {
+                var b = alerts[i].getBoundingClientRect().bottom - mainRect.top;
+                if (b > flowEnd) flowEnd = b;
+            }
+            var cur = resRect.height;
+            // 缓冲 20px：实测各环境存在与表高无关的幻影占位（alert 外边距等，本机 16px），
+            // 定点余量 = 幻影 − 缓冲，缓冲 20 > 16 才能保证 stMain 零溢出、无滚动条
+            var avail = cur + (mainRect.height - pb - 20 - flowEnd);
+            if (avail >= 100) doc.documentElement.style.setProperty('--list-avail-h', Math.round(avail) + 'px');
         } catch (e) { }
     }
     var _calcT = null;
     function scheduleCalc() { clearTimeout(_calcT); _calcT = setTimeout(calcListHeight, 60); }
+    function onWinChange() { sync(); calcListHeight(); }
     sync();
-    window.addEventListener('resize', function () { sync(); calcListHeight(); });
+    window.addEventListener('resize', onWinChange);
+    // 关键：本 iframe 在隐藏容器内，父窗口缩放时它自己收不到 resize 事件，
+    // 表格高度会一直用旧值（用户环境滚动条/空区问题的根源之一）。
+    // 同源 iframe 可直接给父窗口挂监听，窗口/缩放变化都能触发重算。
+    try { window.parent.addEventListener('resize', onWinChange); } catch (e) { }
     window.addEventListener('load', function () { sync(); calcListHeight(); });
     // 兜底触发：本 iframe 在 css_inject 隐藏容器内（display:none 不影响执行），
     // 但执行时机可能早于侧边栏渲染——实测会量到未渲染时的全宽 left=0 且此后

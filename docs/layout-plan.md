@@ -122,15 +122,27 @@ header 与工具栏同步跟随到 `left=0/w=1904`）。
       height: var(--list-avail-h, 300px) !important;
   }
   ```
-- `app.py` JS（扩展现有 sync）新增 `calcListHeight()`：
-  `avail = 父窗口视口高 − 表顶 − 选中提示 alert 总高 − 主区 padding-bottom(80px) − 8px 缓冲`
-  吸底工具栏 `position:fixed` 不入流，故不计入；表格只填到 alert 之上、工具栏之下，无页面滚动条；
-  alert 取主区内**全部** `stAlert` 累加（删除失败等可能额外弹一个）。
-- 触发：初次 / resize / 延迟重试(0,100,300,800,1500ms) / `ResizeObserver`(main，覆盖侧边栏折叠与窗口高度变化) / `MutationObserver`(main，childList+subtree，覆盖选中行增删 alert、切换视图)。
-- **两个实测踩坑（已修复）**：
-  1. 同步脚本在 `css_inject` 隐藏容器内 iframe 执行，iframe 自身 viewport 为 0 高 → `window.innerHeight`=0 会把 avail 算成负数。必须用**父窗口**视口高 `window.parent.innerHeight`。
-  2. 布局未稳时 `res.getBoundingClientRect().top` 会瞬态为 0（先于标题/Tab 渲染），此时算出的 avail 过大（如容器 Tab 曾算成 605px 致表格底部被裁切、无滚动条掩盖溢出）。加守卫：表顶 < 主区顶+50px 时跳过本次、不写脏值；正常布局表顶≈241px 必通过。
-- **实测结果（selenium，1920 宽）**：物品/容器两 Tab 在视口高 700/900/1300 下 `stDataFrameResizable` 高度分别为 164/364/764px，`scrollOverflow=0`（无页面滚动）；`avail≥120` 才写变量，过矮窗口回退 300px 兜底。i18n 17 / data-layer 139 / smoke / e2e 全绿。
+- `app.py` JS（扩展现有 sync）新增 `calcListHeight()`（**v2.1 自校正公式**）：
+  `avail = 当前表高 + (stMain盒高 − stMain.padding-bottom(80) − 20缓冲 − 流内末元素底边)`
+  流内末元素底边 = 表格/提示 alert 中更靠下者（自动涵盖表与 alert 间 margin 及模型外占位）。
+  触发：初次 / 延迟重试 / `ResizeObserver`(main) / `MutationObserver`(main, childList+subtree) /
+  **父窗口 resize 监听**（隐藏 iframe 收不到自身 resize，窗口缩放后必须靠它重算）。
+- **五个实测踩坑（均有 selenium 数据）**：
+  1. 同步脚本在 `css_inject` 隐藏 iframe 内执行，iframe 自身 viewport 高 0 → 视口相关量必须取父窗口。
+  2. **`stMain` 才是真正滚动容器**（`overflow:auto`），根元素 scrollHeight 恒等于视口高——
+     v2 曾据 `scrollingElement.scrollHeight` 自校正，slack 恒 0 导致表格一路缩到下限，方向全错。
+  3. **滚动污染**：v1 用「视口高 − 表顶(视口坐标)」，stMain 滚动过再重算会把滚动量当内容高、
+     表格越算越大（用户环境滚动条/大空区/提示行被顶走的根源）。v2.1 全部改用相对 main
+     盒模型的差值，滚动量在差值中抵消；表顶瞬态守卫同样用差值（top 差 < 50 跳过）。
+  4. **block 容器默认 11rem(176px) 底部内边距**——「滚到底出现大空区」的直接来源，
+     已归零（吸底工具栏避让由 stMain 的 80px 承担）。
+  5. Streamlit 非激活 Tab 面板仍留在 DOM（隐藏），querySelector 按文档序会命中隐藏的物品
+     wrap（高 0）→ 必须遍历挑可见的那个；吸底工具栏贴底(bottom:0)还会给 main 贡献 ~3px
+     溢出 → `bottom:4px` 抬离底边消掉。
+- **实测结果（selenium，1920 宽）**：物品/容器两 Tab 在视口高 631/749/1149/549 下表高
+  211/329/729/129px，`stMain.scrollHeight − clientHeight = 0`（零溢出、无滚动条、无空区），
+  且「滚到底 + 触发重算」后表高增长 0（滚动污染根除）。`avail≥100` 才写变量；无 JS 回退 300px。
+  i18n 17 / data-layer 139 / smoke / e2e 全绿。
   表格容器不存在时（卡片视图/详情页）不计算。
 - **验收**：e2e 全绿且卡片视图不受影响；用户本地确认 1080p 全屏无页面滚动条、4K 表格更高、缩放连续自适应。
 - **风险与降级**：`!important` 覆盖 Streamlit 内联高度，升级版本可能失效 → 选择器与理由写注释；失效时退回 `height=300`（页面可滚，不破功能）。
