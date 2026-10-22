@@ -580,7 +580,7 @@ def render(conn, search, tag_filter, container_options):
     #   50% 处，与吸底工具栏的中心线一致；
     # - 整行包一层带 key 的 container，供 Step 3「列表全屏」整体隐藏。
     with st.container(key="items_viewrow"):
-        col_left, col_add, col_pad = st.columns([5, 2, 5])
+        col_left, col_add, col_pad, col_fs = st.columns([5, 2, 3, 2])
         with col_left:
             mode_labels = [i18n.t("items.view_list"), i18n.t("items.view_card")]
             current_mode = st.session_state.view_mode if st.session_state.view_mode in ("list", "card") else "list"
@@ -592,6 +592,13 @@ def render(conn, search, tag_filter, container_options):
             if st.button(i18n.t("items.add_btn"), key="items_add_btn", use_container_width=True):
                 st.session_state.add_item_mode = True
                 st.rerun()
+        # Step 3 列表全屏：仅列表视图显示（卡片视图无表格，进入全屏会空白）
+        with col_fs:
+            if st.session_state.view_mode == 'list':
+                if st.button(i18n.t("app.fullscreen"), key="items_fullscreen_btn",
+                             use_container_width=True):
+                    st.session_state.list_fullscreen = True
+                    st.rerun()
 
     # 获取数据（用传入的 tag_filter，与 sidebar 同步后的 session_state 保持一致）
     df_all = repo.get_filtered_data(conn, search, tag_filter)

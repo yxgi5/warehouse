@@ -594,7 +594,7 @@ def render(conn):
     # 新增按钮从底部工具栏移到这里——与物品的「➕ 新增物品」位置一致，且卡片视图下
     # 也有入口（原先只有列表视图有）。
     with st.container(key="containers_viewrow"):
-        col_left, col_add, col_pad = st.columns([5, 2, 5])
+        col_left, col_add, col_pad, col_fs = st.columns([5, 2, 3, 2])
         with col_left:
             mode_labels = [i18n.t("containers.view_list"), i18n.t("containers.view_card")]
             current_mode = st.session_state.container_view_mode if st.session_state.container_view_mode in ("list", "card") else "list"
@@ -607,6 +607,13 @@ def render(conn):
             if st.button(i18n.t("containers.add_btn"), key="container_add_btn", use_container_width=True):
                 st.session_state.add_container_mode = True
                 st.rerun()
+        # Step 3 列表全屏：仅列表视图显示（卡片视图无表格，进入全屏会空白）
+        with col_fs:
+            if st.session_state.container_view_mode == 'list':
+                if st.button(i18n.t("app.fullscreen"), key="container_fullscreen_btn",
+                             use_container_width=True):
+                    st.session_state.list_fullscreen = True
+                    st.rerun()
 
     if st.session_state.container_view_mode == "list":
         render_browse(conn, containers_df)

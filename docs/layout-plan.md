@@ -155,7 +155,22 @@ header 与工具栏同步跟随到 `left=0/w=1904`）。
 - **验收**：e2e 全绿且卡片视图不受影响；用户本地确认 1080p 全屏无页面滚动条、4K 表格更高、缩放连续自适应。
 - **风险与降级**：`!important` 覆盖 Streamlit 内联高度，升级版本可能失效 → 选择器与理由写注释；失效时退回 `height=300`（页面可滚，不破功能）。
 
-### Step 3 列表全屏（中风险）
+### Step 3 列表全屏（中风险）—— 已完成
+
+思路：View Mode 行加「⛶ 全屏」按钮 → 切 `st.session_state.list_fullscreen` + rerun；session_state 经隐藏容器注入 `:root { --list-fullscreen: 1|0 }`；同步 JS 读该变量给 `body` toggle class `wh-list-fullscreen` 驱动全屏 CSS。
+
+- `ui/items_tab.py` / `ui/containers_tab.py`：浏览态控制行列改为 `[5,2,3,2]`，第 4 列放「⛶ 全屏」按钮——**仅列表视图渲染**（卡片视图无表格，误入全屏会一片空白）。
+- `app.py`：
+  - `fs_state` 隐藏容器：`st.markdown("<style>:root{--list-fullscreen:0|1}</style>")` 把 session_state 透传给前端（同 css_inject 模式隐藏，避免占顶部间隙）。
+  - `fs_exit` 浮动退出按钮：常驻 DOM（默认 display:none，全屏态 fixed 右上角显示），点击清 `list_fullscreen`；容器 `width:max-content`（fixed 容器 + use_container_width 子按钮会互相撑成整行宽）。
+  - 全屏 CSS：隐藏页面标题(`stHeadingWithActionElements`)、**仅 Tab 栏**(`stTabs [role=tablist]`)、header、两个控制行、提示行、工具栏；表格 wrap `fixed + top:0 + height:100vh + left/width 复用 --toolbar-*`。
+  - JS：`applyFullscreen()` 读变量切 body class；主区 MutationObserver 加 `characterData`（变量由 `<style>` 文本注入、非 :root inline style，`:root` style 观察者收不到）；ESC 监听 → 找 `.st-key-fs_exit button` click()。
+- **四个实测踩坑（均有 selenium 数据）**：
+  1. **面板在 stTabs 容器内**：整块 `stTabs{display:none}` 会把当前表格面板一起灭掉（计算高度正常但 offsetHeight=0，前四轮"fixed 塌缩"全是它的假象）→ 只隐藏 `[role=tablist]`。
+  2. **flex-basis:0 压过 height**：Streamlit 给 wrap/resizable 设 `flex:1 1 0`，flex 主轴尺寸优先于 `height`，`height:100vh` 不生效（表格 26px）→ `flex:none !important` 解除。
+  3. **嵌套 flex 下百分比高度不解析**：resizable `height:100%` 塌成内容高 12px → 改 `height:100vh`。
+  4. **普通流有 82px 杂项占位**（fs_state 容器 + 2px 分隔线 + tabpanel padding 16 + flex gap 16），把流内表格顶下去、底部裁掉 82px → 表格 fixed 出流（top:0/height:100vh），无视全部流内杂项。
+- **实测（selenium，1920×900）**：进入全屏表格 fixed top=0、746px 恰满视口（resH=746），标题/Tab 栏/控制行/提示/工具栏全隐、侧边栏保留、退出按钮可见；ESC 与浮动按钮两条退出路径都精确恢复（表高 367）；容器 Tab 同样验证通过。smoke / e2e / i18n 17 / data-layer 139 全绿。
 
 - `ui/items_tab.py` / `ui/containers_tab.py`：View Mode 行加「⛶ 全屏 / 退出全屏」按钮 → 切 `st.session_state.list_fullscreen` + rerun。
 - `app.py`：按 session_state 注入 `:root { --list-fullscreen: 1|0 }`；JS 读该变量给 `body` toggle class `wh-list-fullscreen`。

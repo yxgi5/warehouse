@@ -161,6 +161,74 @@ header[data-testid="stHeader"] [data-testid="stToolbar"] {
     height: 15px;
     flex-shrink: 0;
 }
+/* Step 3 全屏态（body.wh-list-fullscreen）：表格铺满主内容区，其余 chrome 全隐。
+   隐藏项：页面标题(stHeadingWithActionElements)、Tabs 栏(stTabs)、header(Deploy)、
+   浏览态控制行(items_viewrow/containers_viewrow)、选中提示、吸底工具栏。
+   fixed 相对 stMain（带 transform 的祖先 = 主内容矩形），故表格 top:0/bottom:0
+   即铺满主内容区（与 --toolbar-left/width 同坐标系，无需感知侧边栏/header）。 */
+/* 全屏态隐藏项：仅隐藏 Tab「栏」(role=tablist)——注意面板也在 stTabs 容器内，
+   若整块 display:none 会把当前表格面板也灭掉（计算高度正常但 offsetHeight=0）。 */
+body.wh-list-fullscreen [data-testid="stHeadingWithActionElements"],
+body.wh-list-fullscreen [data-testid="stTabs"] [role="tablist"],
+body.wh-list-fullscreen header[data-testid="stHeader"],
+body.wh-list-fullscreen .st-key-items_viewrow,
+body.wh-list-fullscreen .st-key-containers_viewrow,
+body.wh-list-fullscreen .st-key-list_hint,
+body.wh-list-fullscreen .st-key-container_hint,
+body.wh-list-fullscreen .st-key-list_toolbar,
+body.wh-list-fullscreen .st-key-container_toolbar {
+    display: none !important;
+}
+/* 全屏态：强制 stMain 撑满视口（chrome 已隐藏，避免塌陷）；overflow 隐藏防误导滚动。 */
+body.wh-list-fullscreen [data-testid="stMain"] {
+    height: 100vh !important;
+    overflow: hidden !important;
+}
+/* 表格容器：不走 fixed —— 实测 position:fixed 在带 transform 的 stMain 包含块下
+   高度会塌缩（top/bottom 与 height:100vh 都撑不开，offsetHeight=0）。全屏态 chrome
+   已隐藏（标题/Tabs/控制行/提示/工具栏均 display:none），故表格直接占普通流、用
+   height:100vh 吃满视口；block 顶部 padding 一并清零让表格贴顶。 */
+body.wh-list-fullscreen [data-testid="stMain"] .stMainBlockContainer {
+    padding-top: 0 !important;
+}
+body.wh-list-fullscreen .st-key-item_list_wrap,
+body.wh-list-fullscreen .st-key-container_list_wrap {
+    /* fixed 出流铺满：普通流上方有页面级杂项占位（fs_state 容器、分隔线、
+       tabpanel padding、flex gap，实测共 82px）会把表格顶下去、底部裁掉。
+       fixed + height:100vh 无视全部流内杂项（fs_exit 的 fixed 已验证可行；
+       此前 fixed「塌缩」实为 stTabs 整体隐藏的假象）。flex:none 解除
+       Streamlit 的 flex:1 1 0（flex-basis:0 会压过 height）。 */
+    position: fixed !important;
+    top: 0 !important;
+    left: var(--toolbar-left, 21rem) !important;
+    width: var(--toolbar-width, calc(100vw - 21rem)) !important;
+    flex: none !important;
+    height: 100vh !important;
+    margin: 0 !important;
+    z-index: 1001 !important;
+    background: var(--toolbar-bg, #fff);
+    overflow: hidden;
+}
+body.wh-list-fullscreen .st-key-item_list_wrap [data-testid="stDataFrameResizable"],
+body.wh-list-fullscreen .st-key-container_list_wrap [data-testid="stDataFrameResizable"] {
+    flex: none !important;
+    /* 用 100vh 而非 100%：嵌套 flex 下百分比高度解析不到父级高度，会塌成内容高 */
+    height: 100vh !important;
+    min-height: 0 !important;
+}
+/* 全屏态退出按钮：常驻 DOM（display:none 隐藏），仅全屏可见、置右上角 */
+.st-key-fs_state { display: none !important; }   /* 仅透传变量，隐藏避免占顶部间隙 */
+.st-key-fs_exit {
+    position: fixed;
+    top: 10px;
+    right: 18px;
+    z-index: 1002;
+    /* max-content：fixed 容器 + use_container_width 子按钮会互相撑成整行宽 */
+    width: max-content;
+    display: none !important;
+}
+body.wh-list-fullscreen .st-key-fs_exit { display: block !important; }
+.st-key-fs_exit button { white-space: nowrap !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -191,6 +259,17 @@ header[data-testid="stHeader"] [data-testid="stToolbar"] {
             }
             doc.documentElement.style.setProperty('--toolbar-bg', bg || '#ffffff');
         } catch (e) { /* 跨源等异常时静默，保留 CSS fallback */ }
+    }
+    // Step 3 全屏态：读 :root 上的 --list-fullscreen（由 app.py 按 session_state 注入），
+    // 给 parent 的 body 切 class wh-list-fullscreen，驱动全屏 CSS。不依赖 iframe 重执行
+    // 时机——下方另挂 documentElement 的 style 观察者，变量一变即生效。
+    function applyFullscreen() {
+        try {
+            var doc = window.parent.document;
+            if (!doc || !doc.body) return;
+            var v = getComputedStyle(doc.documentElement).getPropertyValue('--list-fullscreen').trim();
+            doc.body.classList.toggle('wh-list-fullscreen', v === '1');
+        } catch (e) { }
     }
     // Step 2：列表视图表格高度视口自适应。
     // 公式：可用高 = 视口高 − 表顶(视口坐标) − 选中提示 alert 高 − 主区 padding-bottom − 缓冲。
@@ -242,19 +321,20 @@ header[data-testid="stHeader"] [data-testid="stToolbar"] {
     }
     var _calcT = null;
     function scheduleCalc() { clearTimeout(_calcT); _calcT = setTimeout(calcListHeight, 60); }
-    function onWinChange() { sync(); calcListHeight(); }
+    function onWinChange() { sync(); applyFullscreen(); calcListHeight(); }
     sync();
+    applyFullscreen();
     window.addEventListener('resize', onWinChange);
     // 关键：本 iframe 在隐藏容器内，父窗口缩放时它自己收不到 resize 事件，
     // 表格高度会一直用旧值（用户环境滚动条/空区问题的根源之一）。
     // 同源 iframe 可直接给父窗口挂监听，窗口/缩放变化都能触发重算。
     try { window.parent.addEventListener('resize', onWinChange); } catch (e) { }
-    window.addEventListener('load', function () { sync(); calcListHeight(); });
+    window.addEventListener('load', function () { sync(); applyFullscreen(); calcListHeight(); });
     // 兜底触发：本 iframe 在 css_inject 隐藏容器内（display:none 不影响执行），
     // 但执行时机可能早于侧边栏渲染——实测会量到未渲染时的全宽 left=0 且此后
     // 无属性变化可再触发。故加延迟重试 + load 事件；下面的 ResizeObserver
     // 负责侧边栏折叠/展开（主区宽度变化）这类不伴随属性变化的布局变动。
-    [0, 100, 300, 800, 1500].forEach(function (t) { setTimeout(function () { sync(); calcListHeight(); }, t); });
+    [0, 100, 300, 800, 1500].forEach(function (t) { setTimeout(function () { sync(); applyFullscreen(); calcListHeight(); }, t); });
     var doc = window.parent.document;
     var main = doc && doc.querySelector('section[data-testid="stMain"]');
     if (main && 'ResizeObserver' in window) {
@@ -262,8 +342,24 @@ header[data-testid="stHeader"] [data-testid="stToolbar"] {
     }
     if (main && 'MutationObserver' in window) {
         // 属性观察：侧边栏折叠/展开（改 main 的 style/class）；
-        // childList+subtree：选中行变化会增删 alert（height 随之变）或切换视图，需重算表格高度
-        new MutationObserver(function () { scheduleCalc(); }).observe(main, { attributes: true, childList: true, subtree: true, attributeFilter: ['style', 'class'] });
+        // childList+subtree：选中行变化会增删 alert（height 随之变）或切换视图，需重算表格高度；
+        // characterData：--list-fullscreen 由 fs_state 的 <style> 文本注入（非 :root inline
+        // style），其文本变化会触发字符数据突变 → 顺带 applyFullscreen() 切换全屏 class。
+        new MutationObserver(function () { applyFullscreen(); scheduleCalc(); }).observe(main, { attributes: true, childList: true, subtree: true, characterData: true, attributeFilter: ['style', 'class'] });
+    }
+    // Step 3：--list-fullscreen 写在 :root（documentElement）上，故观察它而非 main，
+    // 变量一变立即切换全屏 class（不依赖 iframe 是否随 rerun 重执行）
+    if (doc && 'MutationObserver' in window) {
+        new MutationObserver(function () { applyFullscreen(); }).observe(doc.documentElement, { attributes: true, attributeFilter: ['style'] });
+    }
+    // ESC 退出全屏：在 parent 文档找到浮动退出按钮并 click（纯前端退出，与 session_state 同步）
+    if (doc) {
+        doc.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                var v = getComputedStyle(doc.documentElement).getPropertyValue('--list-fullscreen').trim();
+                if (v === '1') { var b = doc.querySelector('.st-key-fs_exit button'); if (b) b.click(); }
+            }
+        });
     }
 })();
 </script>
@@ -290,6 +386,8 @@ if 'last_backup' not in st.session_state:
     st.session_state.last_backup = None
 if 'orphans' not in st.session_state:
     st.session_state.orphans = None
+if 'list_fullscreen' not in st.session_state:
+    st.session_state.list_fullscreen = False   # Step 3：列表全屏开关
 
 # --- 数据库连接 ---
 conn = get_conn()
@@ -320,6 +418,19 @@ search, tag_filter = sidebar.render(conn)
 
 # --- 主界面 ---
 st.title(i18n.t("app.main_title"))
+
+# Step 3 全屏态透传：把 session_state 写进 :root 变量（前端 CSS/JS 据此切换全屏）。
+# 与 css_inject 同款隐藏容器，避免该 markdown 元素容器占顶部空白。
+with st.container(key="fs_state"):
+    st.markdown(
+        f"<style>:root{{--list-fullscreen:{'1' if st.session_state.list_fullscreen else '0'}}}</style>",
+        unsafe_allow_html=True)
+
+# 全屏态浮动退出按钮（常驻 DOM，仅全屏可见；ESC 也触发它，见下方同步 JS）
+with st.container(key="fs_exit"):
+    if st.button(i18n.t("app.exit_fullscreen"), key="fs_exit_btn"):
+        st.session_state.list_fullscreen = False
+        st.rerun()
 
 # --- 定义Tabs ---
 # 注：Streamlit 1.40 的 st.tabs 不支持 key/on_change（1.55 才引入）。
