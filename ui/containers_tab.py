@@ -409,12 +409,14 @@ def render_browse(conn, containers_df):
         selected_container_ids = df_display.iloc[selected_indices]['id'].tolist()
 
     # --- 选中提示（放表格与吸底工具栏之间，避免被固定栏顶出视线）---
-    if len(containers_df) > 0 and selected_count == 0:
-        st.info(i18n.t("containers.hint_no_selection"))
-    elif selected_count == 1:
-        st.success(i18n.t("containers.hint_one"))
-    elif selected_count > 1:
-        st.success(i18n.t("containers.hint_many", n=selected_count))
+    # Step 2.5：包 key 容器供 CSS 紧凑化（与物品 Tab list_hint 同款处理）
+    with st.container(key="container_hint"):
+        if len(containers_df) > 0 and selected_count == 0:
+            st.info(i18n.t("containers.hint_no_selection"))
+        elif selected_count == 1:
+            st.success(i18n.t("containers.hint_one"))
+        elif selected_count > 1:
+            st.success(i18n.t("containers.hint_many", n=selected_count))
 
     # --- 工具栏（sticky 吸底：页面滚动时固定在视口底部，见 app.py 全局样式）---
     # Phase 10 Step1：「➕ 新增容器」已移到浏览态控制行（与物品一致，且卡片视图

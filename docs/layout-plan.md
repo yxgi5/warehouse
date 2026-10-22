@@ -143,6 +143,14 @@ header 与工具栏同步跟随到 `left=0/w=1904`）。
   211/329/729/129px，`stMain.scrollHeight − clientHeight = 0`（零溢出、无滚动条、无空区），
   且「滚到底 + 触发重算」后表高增长 0（滚动污染根除）。`avail≥100` 才写变量；无 JS 回退 300px。
   i18n 17 / data-layer 139 / smoke / e2e 全绿。
+- **Step 2.5 提示行紧凑化（用户反馈：上下等距、贴紧吸底按钮）**：
+  两个 Tab 的选中提示包 `st.container(key="list_hint" / "container_hint")`；CSS 紧凑化——
+  实高盒是 `[data-testid="stAlertContainer"]`（默认 padding 16/16 + 内容行 24 = 56px，
+  外壳 `.stAlert` 不带实高，pad 打错层会白加 6px），压到 4/4 + 字号 0.82rem + 图标 15px
+  ≈ 32px；容器对称负外边距（上 −15/下 −12，配平实测基础间隙 24/9→9/9）；
+  主区 padding-bottom 80→46（配平式：提示行定点 = main高−46−JS缓冲20，距工具栏顶恰 9px，
+  高度公式动态读 computed padding-bottom 故无需动 JS）。
+  实测：提示行 56→32px、上下间隙 9/9、mainOver=0，表格反而多得 ~33px。
   表格容器不存在时（卡片视图/详情页）不计算。
 - **验收**：e2e 全绿且卡片视图不受影响；用户本地确认 1080p 全屏无页面滚动条、4K 表格更高、缩放连续自适应。
 - **风险与降级**：`!important` 覆盖 Streamlit 内联高度，升级版本可能失效 → 选择器与理由写注释；失效时退回 `height=300`（页面可滚，不破功能）。

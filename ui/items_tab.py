@@ -405,12 +405,14 @@ def render_list_view(conn, df_all, total_items, container_options):
     st.session_state.selected_indices = list(event.selection.rows)
 
     # --- 选中提示（放表格与吸底工具栏之间，避免被固定栏顶出视线）---
-    if total_items > 0 and selected_count == 0:
-        st.info(i18n.t("items.hint_no_selection"))
-    elif selected_count == 1:
-        st.success(i18n.t("items.hint_one"))
-    elif selected_count > 1:
-        st.success(i18n.t("items.hint_many", n=selected_count))
+    # Step 2.5：包 key 容器供 CSS 紧凑化（小字号/小内边距 + 上下对称负边距，贴紧吸底工具栏）
+    with st.container(key="list_hint"):
+        if total_items > 0 and selected_count == 0:
+            st.info(i18n.t("items.hint_no_selection"))
+        elif selected_count == 1:
+            st.success(i18n.t("items.hint_one"))
+        elif selected_count > 1:
+            st.success(i18n.t("items.hint_many", n=selected_count))
 
     # --- 工具栏（fixed 钉死视口底部：不依赖页面滚动，见 app.py 全局样式）---
     # 未选中时按钮 disabled（与容器列表一致）：详情/编辑需恰好选中 1 行，

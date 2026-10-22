@@ -63,7 +63,10 @@ with st.container(key="css_inject"):
 }
 [data-testid="stMain"] {
     padding-top: 0 !important;
-    padding-bottom: 80px !important;
+    /* 46 = 吸底工具栏高(53)+bottom(4)−9px 期望间隙 + JS缓冲20 的配平值：
+       提示行底边定点 = main高 − 46 − 20，距工具栏顶(main高−57)恰 9px。
+       高度公式动态读 computed padding-bottom，改这里无需动 JS */
+    padding-bottom: 46px !important;
 }
 /* header（Deploy + 菜单）实测是 <header data-testid="stHeader">（非 section，
    之前写成 section 导致整条规则从未生效）。原 position:fixed;left:0;right:0
@@ -126,6 +129,37 @@ header[data-testid="stHeader"] [data-testid="stToolbar"] {
 .st-key-item_list_wrap [data-testid="stDataFrameResizable"],
 .st-key-container_list_wrap [data-testid="stDataFrameResizable"] {
     height: var(--list-avail-h, 300px) !important;
+}
+/* Step 2.5：选中提示行紧凑化——小字号/小内边距降占高，容器上下对称负外边距
+   收紧间距（提示行所在纵排 flex gap 16px，−12 后上下各余约 4px+边框），
+   底边再由 JS 定点公式压到距吸底工具栏 ~9px，整体上下等距、紧贴按钮。
+   空库无提示时容器空渲染，负边距无可视影响。 */
+.st-key-list_hint,
+.st-key-container_hint {
+    /* 上 −15 / 下 −12：flex gap 16 基础上，实测提示行上间隙 24、下 9，
+       分别收紧到 9/9 对称（下间隙由 JS 定点公式压到 9） */
+    margin-top: -15px !important;
+    margin-bottom: -12px !important;
+}
+.st-key-list_hint .stAlert,
+.st-key-container_hint .stAlert {
+    padding: 0 !important;          /* 外壳不留白，实高在 stAlertContainer */
+    font-size: 0.82rem;
+}
+/* 实高盒：默认 padding 16/16 + 内容行 24px = 56px 高，压到 4/4 ≈ 32px */
+.st-key-list_hint [data-testid="stAlertContainer"],
+.st-key-container_hint [data-testid="stAlertContainer"] {
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+    font-size: 0.82rem !important;
+    line-height: 1.35 !important;
+    min-height: 0 !important;
+}
+.st-key-list_hint [data-testid="stAlertContainer"] svg,
+.st-key-container_hint [data-testid="stAlertContainer"] svg {
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
 }
 </style>
 """, unsafe_allow_html=True)
