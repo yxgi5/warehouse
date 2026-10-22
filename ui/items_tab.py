@@ -569,25 +569,21 @@ def render(conn, search, tag_filter, container_options):
         return
 
     # --- 浏览态控制行（Phase 10 Step1）---
-    # 布局：[View Mode 标签 | 视图 radio | ➕ 新增物品（水平居中）| 留白]
-    # - 标签与选项平铺一行：radio 自带 label 在 1.40 会独占一行，故标签独立成列、
-    #   radio 标签折叠（label_visibility="collapsed"）；
-    # - 「➕ 新增物品」不再贴最右侧（太靠右）：列比例 [5,2,5] 使按钮列中心正好落在
-    #   主内容区 50% 处，与吸底工具栏的中心线一致；
+    # 布局：[ 视图 radio | ➕ 新增物品（水平居中）| 留白]
+    # - View Mode 标签已按反馈移除（只留选项）；radio 自带 label 折叠
+    #   （label_visibility="collapsed"）保留可访问性，不显示文字；
+    # - 「➕ 新增物品」不再贴最右侧：列比例 [5,2,5] 使按钮列中心正好落在主内容区
+    #   50% 处，与吸底工具栏的中心线一致；
     # - 整行包一层带 key 的 container，供 Step 3「列表全屏」整体隐藏。
     with st.container(key="items_viewrow"):
         col_left, col_add, col_pad = st.columns([5, 2, 5])
         with col_left:
-            sub_lbl, sub_mode = st.columns([1, 2])
-            with sub_lbl:
-                st.write(i18n.t("items.switch_view"))
-            with sub_mode:
-                mode_labels = [i18n.t("items.view_list"), i18n.t("items.view_card")]
-                current_mode = st.session_state.view_mode if st.session_state.view_mode in ("list", "card") else "list"
-                mode_choice = st.radio(i18n.t("items.switch_view"), mode_labels, horizontal=True,
-                                       label_visibility="collapsed",
-                                       index=0 if current_mode == "list" else 1)
-                st.session_state.view_mode = "list" if mode_choice == mode_labels[0] else "card"
+            mode_labels = [i18n.t("items.view_list"), i18n.t("items.view_card")]
+            current_mode = st.session_state.view_mode if st.session_state.view_mode in ("list", "card") else "list"
+            mode_choice = st.radio(i18n.t("items.switch_view"), mode_labels, horizontal=True,
+                                   label_visibility="collapsed",
+                                   index=0 if current_mode == "list" else 1)
+            st.session_state.view_mode = "list" if mode_choice == mode_labels[0] else "card"
         with col_add:
             if st.button(i18n.t("items.add_btn"), key="items_add_btn", use_container_width=True):
                 st.session_state.add_item_mode = True

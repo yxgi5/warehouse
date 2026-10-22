@@ -18,7 +18,7 @@
 
 ## 2. 已确认决策
 
-1. **View Mode**：保留「标签 + 选项一行」（标签不删，与 radio 并排）。
+1. **View Mode**：标签移除、只留选项（按反馈）；radio 自带 label 折叠（`label_visibility="collapsed"`）保留可访问性。
 2. **表格下方提示**（💡 Click the checkboxes to select rows…）：保留原位。
 3. **列表全屏范围**：表格铺满主内容区（红框区域）；侧边栏保留可见；标题/Tab 栏/View Mode 行/提示/工具栏隐藏；按钮 + ESC 退出。
 4. items 与 containers 行为一致。
@@ -30,7 +30,7 @@
 ┌ sidebar ┐┌───────── 主区（整页无滚动条）─────────┐
 │ Language││ 💼 My Warehouse                      │
 │         ││ Items Dashboard Timeline Tags Tree Containers
-│ Global  ││ View Mode  ◉ List ○ Cards   [ + Add Item ]  ← Step1：一行 + 居中
+│ Global  ││ ◉ List ○ Cards   [ + Add Item ]  ← Step1：一行 + 居中（View Mode 标签已去）
 │ Filter  ││┌──────────────────────────────────────┐│
 │         │││ 列表：吃满剩余高度，自己滚             ││  ← Step2：高度视口自适应
 │ Search  │││ （1080p / 4K / 缩放 自动适配）        ││
@@ -56,14 +56,15 @@
 
 ## 5. 分步计划
 
-### Step 1 去废行（低风险）
+### Step 1 去废行 + 顶部留白（低风险）
 
-- `app.py`：`<style>` 增加主区 `padding-top` 收紧（两层都显式定值：`stMain`=1rem、内层 `.stMainBlockContainer`=0，避免默认值所在层不确定导致叠加）；与既有 `padding-bottom` 合并同一条规则。
-- `ui/items_tab.py` / `ui/containers_tab.py`：浏览态控制行包 `st.container(key=...)`，改三列 `[5,2,5]`——左列内再分「标签文本 | radio（标签折叠，`label_visibility="collapsed"`）」，中列放「新增」按钮（列中心正好在主内容区 50% 处，与吸底工具栏中心线一致）。
+- `app.py`：`<style>` 收紧主区顶部。根因：Streamlit 在 `.stMainBlockContainer` 上由 styled 生成的 class 施加顶部 padding（wide 默认 2.1rem；`addPaddingForHeader` 时 = `headerHeight+md` = 4.75rem），普通选择器覆盖会被压过 → 用 `!important`；外层 `stAppViewContainer` / `stMain` 也一并清零避免叠加。主区顶部收到恰好 = header 高度(3.75rem) + 4px 间隙（内容紧贴 header 下方）。
+- **全宽 header 收进主内容区**：`section[data-testid="stHeader"]` 原为 `position:fixed;left:0;right:0` 独占整行窗体；改为 `left: var(--toolbar-left,21rem); width: var(--toolbar-width,...); right:auto`，即只覆盖主内容区（与吸底工具栏同宽），不再压住整行——侧边栏顶部释放，视觉上顶部更紧。
+- `ui/items_tab.py` / `ui/containers_tab.py`：浏览态控制行包 `st.container(key=...)`，三列 `[5,2,5]`——左列放 radio（`label_visibility="collapsed"`，标签不显示但保留可访问性），中列放「新增」按钮（列中心在主内容区 50% 处，与吸底工具栏中心线一致）。**View Mode 标签按反馈移除，只留选项。**
 - `ui/containers_tab.py`：删除 `st.subheader(i18n.t("containers.title"))`；「➕ 新增容器」从底部工具栏（原 col_tool4）移到控制行，工具栏改 4 列 `[3,3,3,5]`（详情/编辑/删除/计数）；`i18n.py` 移除中英 `containers.title` 死 key。
 - **收益附带**：卡片视图下容器 Tab 原先没有新增入口（工具栏只在列表视图渲染），移到控制行后列表/卡片都有。
-- **验收**：AppTest 断言浏览态 radio 仍为 1 个、两个新增按钮都在、0 异常；e2e 全绿；用户本地目视确认。
-- **风险**：低。`label_visibility="collapsed"`、`st.container(key=)` 在 Streamlit 1.40 可用。
+- **验收**：AppTest 断言浏览态 radio 仍为 1 个、两个新增按钮都在、0 异常；e2e 全绿（标签文本断言已改查按钮存在）；用户本地目视确认。
+- **风险**：低。`label_visibility="collapsed"`、`st.container(key=)` 在 Streamlit 1.40 可用；`!important` 覆盖 Streamlit 内联/生成 class 为通用手法。
 
 ### Step 2 表格高度视口自适应（核心，中风险）
 

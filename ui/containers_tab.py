@@ -586,23 +586,20 @@ def render(conn):
         return
 
     # ========== 浏览模式：列表/卡片切换（命名与物品一致：list 视图） ==========
-    # 控制行（Phase 10 Step1，与物品 Tab 同布局）：[View Mode 标签 | 视图 radio |
-    # ➕ 新增容器（水平居中）| 留白]；新增按钮从底部工具栏移到这里——与物品的
-    # 「➕ 新增物品」位置一致，且卡片视图下也有入口（原先只有列表视图有）。
+    # 控制行（Phase 10 Step1，与物品 Tab 同布局）：[ 视图 radio | ➕ 新增容器（水平居中）
+    # | 留白]；View Mode 标签已按反馈移除（只留选项），radio 标签折叠保留可访问性。
+    # 新增按钮从底部工具栏移到这里——与物品的「➕ 新增物品」位置一致，且卡片视图下
+    # 也有入口（原先只有列表视图有）。
     with st.container(key="containers_viewrow"):
         col_left, col_add, col_pad = st.columns([5, 2, 5])
         with col_left:
-            sub_lbl, sub_mode = st.columns([1, 2])
-            with sub_lbl:
-                st.write(i18n.t("containers.switch_view"))
-            with sub_mode:
-                mode_labels = [i18n.t("containers.view_list"), i18n.t("containers.view_card")]
-                current_mode = st.session_state.container_view_mode if st.session_state.container_view_mode in ("list", "card") else "list"
-                mode_choice = st.radio(i18n.t("containers.switch_view"), mode_labels, horizontal=True,
-                                       label_visibility="collapsed",
-                                       index=0 if current_mode == "list" else 1,
-                                       key="container_view_radio")
-                st.session_state.container_view_mode = "list" if mode_choice == mode_labels[0] else "card"
+            mode_labels = [i18n.t("containers.view_list"), i18n.t("containers.view_card")]
+            current_mode = st.session_state.container_view_mode if st.session_state.container_view_mode in ("list", "card") else "list"
+            mode_choice = st.radio(i18n.t("containers.switch_view"), mode_labels, horizontal=True,
+                                   label_visibility="collapsed",
+                                   index=0 if current_mode == "list" else 1,
+                                   key="container_view_radio")
+            st.session_state.container_view_mode = "list" if mode_choice == mode_labels[0] else "card"
         with col_add:
             if st.button(i18n.t("containers.add_btn"), key="container_add_btn", use_container_width=True):
                 st.session_state.add_container_mode = True

@@ -169,9 +169,7 @@ def main():
 
     # ---- 2d. 浏览态顶部有列表/卡片切换（子页面里不应再出现，见 3/4 步） ----
     assert len(at.tabs[0].radio) == 1, "浏览态缺少列表/卡片切换 radio"
-    # Phase 10 Step1：控制行 = 标签文本 + radio + 水平居中的新增按钮（中文界面）
-    assert any("切换视图" in str(getattr(m, "value", "")) for m in at.tabs[0].markdown), \
-        "物品浏览态缺「切换视图」标签文本（标签应与选项同一行）"
+    # Phase 10 Step1：控制行 = 视图 radio（标签已折叠，仅留选项）+ 水平居中的新增按钮
     assert find_button(at, label_contains="新增物品") is not None, \
         "物品浏览态缺「➕ 新增物品」按钮（应位于控制行）"
 
@@ -376,11 +374,9 @@ def main():
     cont_radio = at.tabs[5].radio(key="container_view_radio")
     assert cont_radio is not None, "容器视图切换 radio 不存在"
     # Phase 10 Step1：「Add Container」从底部工具栏移到浏览态控制行（与 Add Item 同位、
-    # 水平居中），列表/卡片视图下都有入口；视图标签与选项平铺一行
+    # 水平居中），列表/卡片视图下都有入口；视图标签已折叠，仅留选项
     assert find_button(at.tabs[5], label_contains="Add Container") is not None, \
         "容器浏览态缺「Add Container」按钮（应位于控制行，与 Add Item 一致）"
-    assert any("View Mode" in str(getattr(m, "value", "")) for m in at.tabs[5].markdown), \
-        "容器浏览态缺 View Mode 标签文本（标签应与选项同一行）"
     cont_radio.set_value("Cards")   # 英文界面下容器卡片视图
     at.run()
     assert len(at.exception) == 0, at.exception

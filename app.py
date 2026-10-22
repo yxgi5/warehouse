@@ -48,15 +48,29 @@ st.markdown("""
     border-top: 1px solid rgba(128, 128, 128, 0.15);
     box-sizing: border-box;
 }
-/* Phase 10 Step1：收紧主区顶部空白。默认顶部内边距由 Streamlit 施加，但落在
-   哪一层（stMain 还是内层 .stMainBlockContainer）版本间不稳定，故两层都显式定值：
-   stMain=1rem、内层容器=0——无论默认在哪层，合计都是 1rem，不会叠加。 */
-section[data-testid="stMain"] {
-    padding-top: 1rem;
-    padding-bottom: 80px;
+/* Phase 10 Step1：收紧主区顶部空白。
+   根因：Streamlit 在 .stMainBlockContainer 上由 styled 生成的 class 施加顶部 padding
+   （wide 模式默认 2.1rem；addPaddingForHeader 时 = headerHeight+md = 4.75rem），
+   普通选择器覆盖会被它压过（实测），必须 !important。外层 stAppViewContainer /
+   stMain 也一并清零，避免叠加。这里把主区顶部收到恰好等于 header 高度(3.75rem)
+   +4px 间隙，内容正好贴在 header 下方，不再有多余留白。 */
+[data-testid="stAppViewContainer"] {
+    padding-top: 0 !important;
 }
-section[data-testid="stMain"] .stMainBlockContainer {
-    padding-top: 0;
+[data-testid="stMain"] {
+    padding-top: 0 !important;
+    padding-bottom: 80px !important;
+}
+[data-testid="stMain"] .stMainBlockContainer {
+    padding-top: 4rem !important;
+}
+/* 全宽 header（Deploy + 菜单）收进主内容区，与吸底工具栏同宽（不再压住整行窗体）。
+   左/宽复用已存在的 --toolbar-left/--toolbar-width（JS 随主区实时同步）；
+   未就绪时回退 21rem（展开侧边栏默认宽度），与工具栏 fallback 一致。 */
+section[data-testid="stHeader"] {
+    left: var(--toolbar-left, 21rem) !important;
+    width: var(--toolbar-width, calc(100vw - 21rem)) !important;
+    right: auto !important;
 }
 /* 工具栏按钮组作为整体在主内容区横向居中：侧边栏折叠/展开改变的是工具栏容器
    （fixed）的 left/width，按钮组中心始终保持在主内容区横向中心，不会跟着左移。
