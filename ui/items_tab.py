@@ -170,16 +170,19 @@ def render_edit_mode(conn, item_data, container_options):
                                     key="edit_price")
         c1, c2 = st.columns(2)
         with c1:
+            # 勾选框放日期上一行且紧贴日期（等高占位使其沉到行底，原理同新增页）
+            st.markdown('<div style="height:2.5rem" aria-hidden="true"></div>',
+                        unsafe_allow_html=True)
             # 无日期勾选框是保存语义；date_input 不能 disabled 联动（form 内控件
             # 变化不 rerun，禁用态不刷新，会出现“取消勾选仍不可填”）
-            purchase_date = st.date_input(i18n.t("form.purchase_date"), key="edit_purchase_date")
+            no_date = st.checkbox(i18n.t("common.no_date"), key="edit_no_date",
+                                  help=i18n.t("common.no_date_help"))
         with c2:
             quantity = st.number_input(i18n.t("form.quantity"), min_value=1, step=1, value=1,
                                       key="edit_quantity")
         c1, c2 = st.columns(2)
         with c1:
-            no_date = st.checkbox(i18n.t("common.no_date"), key="edit_no_date",
-                                  help=i18n.t("common.no_date_help"))
+            purchase_date = st.date_input(i18n.t("form.purchase_date"), key="edit_purchase_date")
         with c2:
             unit = st.text_input(i18n.t("form.unit"), key="edit_unit",
                                  placeholder=i18n.t("form.unit_ph"))

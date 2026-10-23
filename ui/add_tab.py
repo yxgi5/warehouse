@@ -48,17 +48,22 @@ def render(conn, container_options):
             price = st.number_input(i18n.t("form.price"), min_value=0.0, format="%.2f", step=0.1, key="add_price")
         c1, c2 = st.columns(2)
         with c1:
+            # 勾选框放日期上一行且要紧贴日期：勾选框比带 label 的输入框矮约一个
+            # label 高度，任其顶格的话行内剩余空白会把勾选框与下方日期隔开。
+            # 加等高占位把勾选框“沉”到行底，与右侧数量输入框下沿平齐。
+            st.markdown('<div style="height:2.5rem" aria-hidden="true"></div>',
+                        unsafe_allow_html=True)
             # date_input 无法原生留空（不给 value 也默认今天）。勾选框是保存语义：
             # 默认勾选=无购买日期（存空）；取消勾选即可填日期。注意不能把 date_input
             # disabled 绑定到勾选框——form 内控件变化不触发 rerun，禁用状态不会刷新，
             # 会出现“勾了没反应/取消了仍不可填”。日期框始终保持可用。
-            purchase_date = st.date_input(i18n.t("form.purchase_date"))
+            no_date = st.checkbox(i18n.t("common.no_date"), value=True,
+                                  help=i18n.t("common.no_date_help"))
         with c2:
             quantity = st.number_input(i18n.t("form.quantity"), min_value=1, step=1, value=1, key="add_quantity")
         c1, c2 = st.columns(2)
         with c1:
-            no_date = st.checkbox(i18n.t("common.no_date"), value=True,
-                                  help=i18n.t("common.no_date_help"))
+            purchase_date = st.date_input(i18n.t("form.purchase_date"))
         with c2:
             unit = st.text_input(i18n.t("form.unit"), placeholder=i18n.t("form.unit_ph"), key="add_unit")
         c1, c2 = st.columns(2)
