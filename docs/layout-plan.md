@@ -247,3 +247,22 @@ header 与工具栏同步跟随到 `left=0/w=1904`）。
   上方 label 高度决定；Streamlit 升级致尺寸变化时需重测）。
 - **实测（selenium）**：新增页/编辑页按钮中心与 Dropzone 中心偏差 0px（改前 -47.5）；
   空选点击仍弹「请先选择」警告（handler 迁移无副作用）；smoke / e2e / i18n 17 / data 139 全绿。
+
+### 容器新增页照片交互对齐编辑页（用户反馈，已完成）
+
+用户反馈：容器编辑页已是「表单外独立照片区 + 立即生效」，但新增页仍是表单内嵌上传器、
+无预览无调序——应与容器编辑页/物品新增页一致。
+
+- `ui/containers_tab.py`（`render_edit_form` 新增态分支）：
+  - 表单内嵌上传器移除（`uploaded_files = None`）；
+  - 表单外新增**照片暂存区**（与物品新增页同款 `[3,1]` 列布局）：暂存列表存
+    `session_state.add_container_staged_photos`（UploadedFile 跨 rerun 保留），
+    120px 缩略图预览 + 上移/下移/移除；按 (文件名, 大小) 防重复；
+  - 「添加」提交时把暂存列表传给 `repo.add_container` 一并落库；保存成功/取消/
+    重新进入新增页三处清空暂存；
+  - widget key 全部 `cadd_`/`cstaged_` 前缀（st.tabs 全量渲染，与物品新增页同屏，
+    key 必须唯一）；暂存按钮包 `st.container(key="container_add_photo_btn")` 纳入
+    app.py 垂直居中 CSS 组。
+- `i18n.py` 新增 `containers.photo_hint_draft`（暂存提示）、`containers.staged_images`（暂存区标题）。
+- **实测（selenium 全流程）**：进容器新增页 → 选 2 图 → 暂存预览 2 张 → 上移交换 →
+  填名提交 → `container_images` 落库 2 条，测试数据清理；smoke / e2e / i18n 17 / data 139 全绿。

@@ -248,7 +248,8 @@ body.wh-list-fullscreen .st-key-fs_exit { display: block !important; }
    偏移由上传框上方 label 高度决定；Streamlit 升级致两者尺寸变化时需重测）。 */
 .st-key-edit_photo_add_btn,
 .st-key-add_photo_btn,
-.st-key-container_photo_add_btn {
+.st-key-container_photo_add_btn,
+.st-key-container_add_photo_btn {
     margin-top: 47.5px !important;
 }
 </style>

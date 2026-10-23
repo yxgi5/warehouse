@@ -232,6 +232,8 @@ TRANSLATIONS = {
         "containers.no_photos_selected": "请先选择要添加的照片",
         "containers.photo_add_fail": "添加照片失败: {err}",
         "containers.photo_hint": "拖入或点选照片后，按「添加照片」立即生效，可继续调整顺序",
+        "containers.photo_hint_draft": "拖入或点选照片，按「添加照片」加入下方暂存并预览，点「添加」一并生效",
+        "containers.staged_images": "📷 待添加照片（点「添加」时生效，可调整顺序）：",
         "containers.jump_item_hint": "已在「物品浏览」标签打开物品详情",
         "containers.none_value": "无",
 
@@ -475,6 +477,8 @@ TRANSLATIONS = {
         "containers.no_photos_selected": "Please select photos to add first",
         "containers.photo_add_fail": "Failed to add photos: {err}",
         "containers.photo_hint": "Drop or pick photos, then click Add Photos — takes effect immediately, reorderable right after",
+        "containers.photo_hint_draft": "Drop or pick photos, click Add Photos to stage & preview; they are saved with the container on Add",
+        "containers.staged_images": "📷 Staged photos (saved on Add, reorderable):",
         "containers.jump_item_hint": "Item details opened in the Items tab",
         "containers.none_value": "None",
 
