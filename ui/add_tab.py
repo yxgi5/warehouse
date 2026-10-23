@@ -40,6 +40,8 @@ def render(conn, container_options):
             no_date = st.checkbox(i18n.t("common.no_date"), value=True,
                                   help=i18n.t("common.no_date_help"))
             purchase_date = st.date_input(i18n.t("form.purchase_date"))
+            related_items = st.text_input(i18n.t("form.related_items"),
+                                          help=i18n.t("form.related_help"))
         with col2:
             platform = st.text_input(i18n.t("form.platform"))
             order_no = st.text_input(i18n.t("form.order_no"))
@@ -47,8 +49,6 @@ def render(conn, container_options):
             quantity = st.number_input(i18n.t("form.quantity"), min_value=1, step=1, value=1, key="add_quantity")
             unit = st.text_input(i18n.t("form.unit"), placeholder=i18n.t("form.unit_ph"), key="add_unit")
             tags = st.text_input(i18n.t("form.tags"), key="add_tags")
-            related_items = st.text_input(i18n.t("form.related_items"),
-                                          help=i18n.t("form.related_help"))
         features = st.text_area(i18n.t("form.features"))
         description = st.text_area(i18n.t("form.description"))
 

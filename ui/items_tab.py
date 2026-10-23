@@ -160,6 +160,8 @@ def render_edit_mode(conn, item_data, container_options):
             no_date = st.checkbox(i18n.t("common.no_date"), key="edit_no_date",
                                   help=i18n.t("common.no_date_help"))
             purchase_date = st.date_input(i18n.t("form.purchase_date"), key="edit_purchase_date")
+            related_items = st.text_input(i18n.t("form.related_items"), key="edit_related_items",
+                                          help=i18n.t("form.related_help"))
         with col2:
             platform = st.text_input(i18n.t("form.platform"), key="edit_platform")
             order_no = st.text_input(i18n.t("form.order_no"), key="edit_order_no")
@@ -170,8 +172,6 @@ def render_edit_mode(conn, item_data, container_options):
             unit = st.text_input(i18n.t("form.unit"), key="edit_unit",
                                  placeholder=i18n.t("form.unit_ph"))
             tags = st.text_input(i18n.t("form.tags"), key="edit_tags")
-            related_items = st.text_input(i18n.t("form.related_items"), key="edit_related_items",
-                                          help=i18n.t("form.related_help"))
         features = st.text_area(i18n.t("form.features"), key="edit_features")
         description = st.text_area(i18n.t("form.description"), key="edit_description")
 
