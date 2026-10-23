@@ -209,9 +209,11 @@ def render_edit_mode(conn, item_data, container_options):
                                      accept_multiple_files=True, key="edit_uploaded_files")
         st.caption(i18n.t("items.photo_hint"))
     with col_btn:
-        st.write("")   # 与上传框大致对齐（caption 占一行）
-        if st.button(i18n.t("items.add_photos"), key="item_add_photos",
-                     use_container_width=True):
+        # keyed 容器供 CSS 垂直居中（相对上传框），见 app.py .st-key-*_photo_add_btn
+        with st.container(key="edit_photo_add_btn"):
+            add_clicked = st.button(i18n.t("items.add_photos"), key="item_add_photos",
+                                    use_container_width=True)
+        if add_clicked:
             if not new_files:
                 st.warning(i18n.t("items.no_photos_selected"))
             else:
@@ -374,28 +376,30 @@ def render_list_view(conn, df_all, total_items, container_options):
     df_display['price'] = df_display['price'].apply(
         lambda x: f"¥{x:.2f}" if pd.notna(x) and x else "")
 
-    # --- 表格（高度与容器列表一致：固定 300，不提供滑块）---
+    # --- 表格（Step 2：包一层带 key 容器供 CSS/JS 定位，高度自适应视口；
+    # height=300 仅作无 JS 时的兜底）---
     # 表格先渲染，下方工具栏直接读 event.selection.rows 即本轮最新选中，
     # 不存在"选中结果滞后一帧"的问题；同时写回 session_state 供批量删除后清空。
-    event = st.dataframe(
-        df_display,
-        key="item_table",
-        selection_mode="multi-row",
-        on_select="rerun",
-        use_container_width=True,
-        height=300,
-        hide_index=True,
-        column_config={
-            "id": None,
-            "item_no": i18n.t("form.item_no"),
-            "name": i18n.t("form.name"),
-            "container_name": i18n.t("form.container"),
-            "purchase_date": i18n.t("form.purchase_date"),
-            "platform": i18n.t("form.platform"),
-            "price": i18n.t("form.price"),
-            "tags": i18n.t("form.tags")
-        }
-    )
+    with st.container(key="item_list_wrap"):
+        event = st.dataframe(
+            df_display,
+            key="item_table",
+            selection_mode="multi-row",
+            on_select="rerun",
+            use_container_width=True,
+            height=300,
+            hide_index=True,
+            column_config={
+                "id": None,
+                "item_no": i18n.t("form.item_no"),
+                "name": i18n.t("form.name"),
+                "container_name": i18n.t("form.container"),
+                "purchase_date": i18n.t("form.purchase_date"),
+                "platform": i18n.t("form.platform"),
+                "price": i18n.t("form.price"),
+                "tags": i18n.t("form.tags")
+            }
+        )
     # 当前轮选中：过滤越界旧索引（删除/筛选后行号可能失效）
     selected_indices = [i for i in event.selection.rows if 0 <= i < len(df_all)]
     selected_item_ids = df_all.iloc[selected_indices]['id'].tolist()
@@ -403,12 +407,14 @@ def render_list_view(conn, df_all, total_items, container_options):
     st.session_state.selected_indices = list(event.selection.rows)
 
     # --- 选中提示（放表格与吸底工具栏之间，避免被固定栏顶出视线）---
-    if total_items > 0 and selected_count == 0:
-        st.info(i18n.t("items.hint_no_selection"))
-    elif selected_count == 1:
-        st.success(i18n.t("items.hint_one"))
-    elif selected_count > 1:
-        st.success(i18n.t("items.hint_many", n=selected_count))
+    # Step 2.5：包 key 容器供 CSS 紧凑化（小字号/小内边距 + 上下对称负边距，贴紧吸底工具栏）
+    with st.container(key="list_hint"):
+        if total_items > 0 and selected_count == 0:
+            st.info(i18n.t("items.hint_no_selection"))
+        elif selected_count == 1:
+            st.success(i18n.t("items.hint_one"))
+        elif selected_count > 1:
+            st.success(i18n.t("items.hint_many", n=selected_count))
 
     # --- 工具栏（fixed 钉死视口底部：不依赖页面滚动，见 app.py 全局样式）---
     # 未选中时按钮 disabled（与容器列表一致）：详情/编辑需恰好选中 1 行，
@@ -568,22 +574,34 @@ def render(conn, search, tag_filter, container_options):
         add_tab.render(conn, container_options)
         return
 
-    # --- 浏览态：子视图切换（内部值用稳定 list/card，显示文本按语言翻译）---
-    # 「➕ 新增物品」入口放在本 Tab 浏览态顶部（列表/卡片视图均常驻可见）：
-    # 不再作为独立 Tab，否则从任意 Tab 点进来都会直接进入新增页、覆盖当前
-    # 浏览状态，造成逻辑混乱。
-    col_mode, col_add = st.columns([2, 1])
-    with col_mode:
-        mode_labels = [i18n.t("items.view_list"), i18n.t("items.view_card")]
-        current_mode = st.session_state.view_mode if st.session_state.view_mode in ("list", "card") else "list"
-        mode_choice = st.radio(i18n.t("items.switch_view"), mode_labels, horizontal=True,
-                               index=0 if current_mode == "list" else 1)
-        st.session_state.view_mode = "list" if mode_choice == mode_labels[0] else "card"
-    with col_add:
-        st.write("")   # 与左侧 radio 选项行大致对齐（radio 标签占一行）
-        if st.button(i18n.t("items.add_btn"), key="items_add_btn", use_container_width=True):
-            st.session_state.add_item_mode = True
-            st.rerun()
+    # --- 浏览态控制行（Phase 10 Step1）---
+    # 布局：[ 视图 radio | ➕ 新增物品（水平居中）| 留白]
+    # - View Mode 标签已按反馈移除（只留选项）；radio 自带 label 折叠
+    #   （label_visibility="collapsed"）保留可访问性，不显示文字；
+    # - 「➕ 新增物品」不再贴最右侧：列比例 [5,2,5] 使按钮列中心正好落在主内容区
+    #   50% 处，与吸底工具栏的中心线一致；
+    # - 整行包一层带 key 的 container，供 Step 3「列表全屏」整体隐藏。
+    with st.container(key="items_viewrow"):
+        col_left, col_add, col_pad, col_fs = st.columns([5, 2, 3, 2])
+        with col_left:
+            mode_labels = [i18n.t("items.view_list"), i18n.t("items.view_card")]
+            current_mode = st.session_state.view_mode if st.session_state.view_mode in ("list", "card") else "list"
+            mode_choice = st.radio(i18n.t("items.switch_view"), mode_labels, horizontal=True,
+                                   label_visibility="collapsed",
+                                   index=0 if current_mode == "list" else 1)
+            st.session_state.view_mode = "list" if mode_choice == mode_labels[0] else "card"
+        with col_add:
+            if st.button(i18n.t("items.add_btn"), key="items_add_btn", use_container_width=True):
+                st.session_state.add_item_mode = True
+                st.session_state.add_staged_photos = []   # 进入新增前清空照片暂存草稿
+                st.rerun()
+        # Step 3 列表全屏：仅列表视图显示（卡片视图无表格，进入全屏会空白）
+        with col_fs:
+            if st.session_state.view_mode == 'list':
+                if st.button(i18n.t("app.fullscreen"), key="items_fullscreen_btn",
+                             use_container_width=True):
+                    st.session_state.list_fullscreen = True
+                    st.rerun()
 
     # 获取数据（用传入的 tag_filter，与 sidebar 同步后的 session_state 保持一致）
     df_all = repo.get_filtered_data(conn, search, tag_filter)

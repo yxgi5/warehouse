@@ -87,6 +87,11 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
         current_location = ""
         current_note = ""
         title = i18n.t("containers.add_title")
+        # 照片暂存区（表单外，与物品新增页同款交互）：先选文件 → 「添加照片」加入
+        # 暂存并预览 → 可上移/下移/移除 → 点「添加」随表单一并落库（容器尚无 id，
+        # 无法先附图后存）。存 session_state 的 UploadedFile 列表跨 rerun 保留；
+        # 落库时 repo 层还会按内容去重。
+        staged = st.session_state.setdefault('add_container_staged_photos', [])
 
     st.subheader(title)
     with st.form("container_form", clear_on_submit=False):
@@ -125,15 +130,9 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
         # 与物品表单的特点/附加说明一致，长文本不撑破两列布局
         new_note = st.text_area(i18n.t("containers.note"), value=current_note, height=120)
 
-        # 照片上传：新增态随表单提交（容器尚无 id，无法先附图后存）；
-        # 编辑态移到表单外图片管理区即时生效（与物品编辑一致，见下方）
-        if is_edit:
-            uploaded_files = None
-        else:
-            uploaded_files = st.file_uploader(i18n.t("containers.upload_images"),
-                                              type=['jpg', 'jpeg', 'png', 'gif', 'webp'],
-                                              accept_multiple_files=True,
-                                              key="container_upload_files")
+        # 照片：编辑态在表单外图片管理区即时生效（与物品编辑一致，见下方）；
+        # 新增态在表单外暂存区预览/调序、随「添加」一并落库（与物品新增一致，见下方）
+        uploaded_files = None
 
         # 按钮布局：三列（更新/添加、取消、删除【仅编辑】）
         col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
@@ -162,8 +161,10 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
                                               new_location, new_note, uploaded_files)
                         saved_msg = i18n.t("containers.saved_updated", name=new_name)
                     else:
+                        # 暂存照片随「添加」一并落库（add_container 内部按内容去重）
                         repo.add_container(conn, new_name, new_parent_id,
-                                           new_location, new_note, uploaded_files)
+                                           new_location, new_note, list(staged))
+                        st.session_state.add_container_staged_photos = []
                         saved_msg = i18n.t("containers.saved_added", name=new_name)
                     st.toast(saved_msg, icon="✅")
                     st.session_state.edit_container_id = None
@@ -174,6 +175,8 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
                     st.error(i18n.t("containers.op_fail", err=e))
                     conn.rollback()
         if cancel:
+            # 取消：回到浏览态并清空照片暂存（避免下次进入残留上次的草稿）
+            st.session_state.add_container_staged_photos = []
             st.session_state.edit_container_id = None
             st.session_state.add_container_mode = False
             st.rerun()
@@ -196,9 +199,12 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
                                          key="cedit_upload_files")
             st.caption(i18n.t("containers.photo_hint"))
         with col_btn:
-            st.write("")   # 与上传框大致对齐（caption 占一行）
-            if st.button(i18n.t("containers.add_photos"), key="cedit_add_photos",
-                         use_container_width=True):
+            # keyed 容器供 CSS 垂直居中（相对上传框），见 app.py .st-key-*_photo_add_btn
+            with st.container(key="container_photo_add_btn"):
+                add_clicked = st.button(i18n.t("containers.add_photos"),
+                                        key="cedit_add_photos",
+                                        use_container_width=True)
+            if add_clicked:
                 if not new_files:
                     st.warning(i18n.t("containers.no_photos_selected"))
                 else:
@@ -246,6 +252,66 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
                     if st.button(i18n.t("items.img_del"), key=f"cedit_img_del_{img_id}",
                                  use_container_width=True):
                         repo.delete_container_image(conn, img_id)
+                        st.rerun()
+
+    # ==================== 照片暂存区（仅新增态；表单外，与物品新增页同款交互） ====================
+    # 选图 → 「添加照片」加入暂存并预览 → 可上移/下移/移除 → 点「添加」随表单一并落库
+    if not is_edit:
+        col_up, col_btn = st.columns([3, 1])
+        with col_up:
+            new_files = st.file_uploader(i18n.t("containers.upload_images"),
+                                         type=['jpg', 'jpeg', 'png', 'gif', 'webp'],
+                                         accept_multiple_files=True,
+                                         key="cadd_upload_files")
+            st.caption(i18n.t("containers.photo_hint_draft"))
+        with col_btn:
+            # keyed 容器供 CSS 垂直居中（相对上传框），见 app.py .st-key-*_photo_add_btn
+            with st.container(key="container_add_photo_btn"):
+                stage_clicked = st.button(i18n.t("containers.add_photos"),
+                                          key="cadd_stage_photos",
+                                          use_container_width=True)
+            if stage_clicked:
+                if not new_files:
+                    st.warning(i18n.t("containers.no_photos_selected"))
+                else:
+                    # 按 (文件名, 大小) 防重复加入暂存（保存落库时另有内容级去重兜底）
+                    seen = {(f.name, f.size) for f in staged}
+                    add = [f for f in new_files if (f.name, f.size) not in seen]
+                    if add:
+                        staged.extend(add)
+                        st.toast(i18n.t("containers.photos_added", n=len(add)), icon="🖼️")
+                    else:
+                        st.warning(i18n.t("containers.no_photos_selected"))
+                    st.rerun()
+
+        if staged:
+            st.write(i18n.t("containers.staged_images"))
+            for idx, f in enumerate(staged):
+                col_img, col_up, col_down, col_del = st.columns([3, 1, 1, 1])
+                with col_img:
+                    st.image(f, width=120)
+                with col_up:
+                    if idx > 0:
+                        if st.button(i18n.t("items.img_up"), key=f"cstaged_up_{idx}",
+                                     use_container_width=True):
+                            staged[idx - 1], staged[idx] = staged[idx], staged[idx - 1]
+                            st.rerun()
+                    else:
+                        st.button(i18n.t("items.img_up"), key=f"cstaged_up_{idx}_d",
+                                  disabled=True, use_container_width=True)
+                with col_down:
+                    if idx < len(staged) - 1:
+                        if st.button(i18n.t("items.img_down"), key=f"cstaged_down_{idx}",
+                                     use_container_width=True):
+                            staged[idx + 1], staged[idx] = staged[idx], staged[idx + 1]
+                            st.rerun()
+                    else:
+                        st.button(i18n.t("items.img_down"), key=f"cstaged_down_{idx}_d",
+                                  disabled=True, use_container_width=True)
+                with col_del:
+                    if st.button(i18n.t("items.img_del"), key=f"cstaged_del_{idx}",
+                                 use_container_width=True):
+                        staged.pop(idx)
                         st.rerun()
 
 
@@ -380,22 +446,23 @@ def render_browse(conn, containers_df):
         containers_df.set_index('id')['name'].to_dict()
     ).fillna(i18n.t("containers.none_parent"))
 
-    # 显示表格（带选择）
-    event = st.dataframe(
-        df_display[['id', 'name', 'parent_name', 'location']],
-        selection_mode="multi-row",
-        on_select="rerun",
-        use_container_width=True,
-        height=300,
-        hide_index=True,
-        column_config={
-            "id": None,
-            "name": i18n.t("containers.col_name"),
-            "parent_name": i18n.t("containers.col_parent"),
-            "location": i18n.t("containers.col_location")
-        },
-        key="container_list"
-    )
+    # 显示表格（带选择）；Step 2 包一层带 key 容器，高度自适应视口（height=300 兜底）
+    with st.container(key="container_list_wrap"):
+        event = st.dataframe(
+            df_display[['id', 'name', 'parent_name', 'location']],
+            selection_mode="multi-row",
+            on_select="rerun",
+            use_container_width=True,
+            height=300,
+            hide_index=True,
+            column_config={
+                "id": None,
+                "name": i18n.t("containers.col_name"),
+                "parent_name": i18n.t("containers.col_parent"),
+                "location": i18n.t("containers.col_location")
+            },
+            key="container_list"
+        )
 
     selected_indices = event.selection.rows
     # 安全过滤：只保留有效索引，防止删除后遗留旧索引
@@ -408,16 +475,20 @@ def render_browse(conn, containers_df):
         selected_container_ids = df_display.iloc[selected_indices]['id'].tolist()
 
     # --- 选中提示（放表格与吸底工具栏之间，避免被固定栏顶出视线）---
-    if len(containers_df) > 0 and selected_count == 0:
-        st.info(i18n.t("containers.hint_no_selection"))
-    elif selected_count == 1:
-        st.success(i18n.t("containers.hint_one"))
-    elif selected_count > 1:
-        st.success(i18n.t("containers.hint_many", n=selected_count))
+    # Step 2.5：包 key 容器供 CSS 紧凑化（与物品 Tab list_hint 同款处理）
+    with st.container(key="container_hint"):
+        if len(containers_df) > 0 and selected_count == 0:
+            st.info(i18n.t("containers.hint_no_selection"))
+        elif selected_count == 1:
+            st.success(i18n.t("containers.hint_one"))
+        elif selected_count > 1:
+            st.success(i18n.t("containers.hint_many", n=selected_count))
 
     # --- 工具栏（sticky 吸底：页面滚动时固定在视口底部，见 app.py 全局样式）---
+    # Phase 10 Step1：「➕ 新增容器」已移到浏览态控制行（与物品一致，且卡片视图
+    # 下也有入口），工具栏只剩选中项操作：详情 / 编辑 / 删除 + 计数。
     with st.container(key="container_toolbar"):
-        col_tool1, col_tool2, col_tool3, col_tool4, col_tool5 = st.columns([3, 3, 3, 3, 5])
+        col_tool1, col_tool2, col_tool3, col_tool4 = st.columns([3, 3, 3, 5])
         with col_tool1:
             if selected_count == 1:
                 if st.button(i18n.t("containers.open_detail"), key="container_detail_active",
@@ -451,10 +522,6 @@ def render_browse(conn, containers_df):
             else:
                 st.button(i18n.t("items.delete"), key="container_delete_disabled", disabled=True, use_container_width=True)
         with col_tool4:
-            if st.button(i18n.t("containers.add_btn"), key="container_add_btn", use_container_width=True):
-                st.session_state.add_container_mode = True
-                st.rerun()
-        with col_tool5:
             st.caption(i18n.t("containers.list_count", total=len(containers_df), n=selected_count))
 
 
@@ -555,7 +622,8 @@ def render_card_view(conn, containers_df):
 
 
 def render(conn):
-    st.subheader(i18n.t("containers.title"))
+    # Phase 10 Step1：删掉「Container Management」整行——Tab 名已说明用途，
+    # 且该行与上方标题之间还有一大块空白，纯浪费纵向空间（物品 Tab 本就没有这行）。
 
     # 会话状态：编辑/新增/详情/视图模式
     if 'edit_container_id' not in st.session_state:
@@ -587,11 +655,32 @@ def render(conn):
         return
 
     # ========== 浏览模式：列表/卡片切换（命名与物品一致：list 视图） ==========
-    mode_labels = [i18n.t("containers.view_list"), i18n.t("containers.view_card")]
-    current_mode = st.session_state.container_view_mode if st.session_state.container_view_mode in ("list", "card") else "list"
-    mode_choice = st.radio(i18n.t("containers.switch_view"), mode_labels, horizontal=True,
-                           index=0 if current_mode == "list" else 1, key="container_view_radio")
-    st.session_state.container_view_mode = "list" if mode_choice == mode_labels[0] else "card"
+    # 控制行（Phase 10 Step1，与物品 Tab 同布局）：[ 视图 radio | ➕ 新增容器（水平居中）
+    # | 留白]；View Mode 标签已按反馈移除（只留选项），radio 标签折叠保留可访问性。
+    # 新增按钮从底部工具栏移到这里——与物品的「➕ 新增物品」位置一致，且卡片视图下
+    # 也有入口（原先只有列表视图有）。
+    with st.container(key="containers_viewrow"):
+        col_left, col_add, col_pad, col_fs = st.columns([5, 2, 3, 2])
+        with col_left:
+            mode_labels = [i18n.t("containers.view_list"), i18n.t("containers.view_card")]
+            current_mode = st.session_state.container_view_mode if st.session_state.container_view_mode in ("list", "card") else "list"
+            mode_choice = st.radio(i18n.t("containers.switch_view"), mode_labels, horizontal=True,
+                                   label_visibility="collapsed",
+                                   index=0 if current_mode == "list" else 1,
+                                   key="container_view_radio")
+            st.session_state.container_view_mode = "list" if mode_choice == mode_labels[0] else "card"
+        with col_add:
+            if st.button(i18n.t("containers.add_btn"), key="container_add_btn", use_container_width=True):
+                st.session_state.add_container_mode = True
+                st.session_state.add_container_staged_photos = []   # 进入新增前清空照片暂存草稿
+                st.rerun()
+        # Step 3 列表全屏：仅列表视图显示（卡片视图无表格，进入全屏会空白）
+        with col_fs:
+            if st.session_state.container_view_mode == 'list':
+                if st.button(i18n.t("app.fullscreen"), key="container_fullscreen_btn",
+                             use_container_width=True):
+                    st.session_state.list_fullscreen = True
+                    st.rerun()
 
     if st.session_state.container_view_mode == "list":
         render_browse(conn, containers_df)

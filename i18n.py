@@ -24,6 +24,8 @@ TRANSLATIONS = {
         "app.title": "个人物品仓库",
         "app.main_title": "🧰 我的物品仓库",
         "app.backup_fail": "自动备份失败: {err}",
+        "app.fullscreen": "⛶ 最大化",
+        "app.exit_fullscreen": "退出最大化 (Esc)",
         "app.tab.items": "📦 物品浏览",
         "app.tab.dashboard": "📊 数据看板",
         "app.tab.timeline": "⏳ 时间线",
@@ -99,6 +101,8 @@ TRANSLATIONS = {
         "items.no_photos_selected": "请先选择要添加的图片",
         "items.photo_add_fail": "添加图片失败: {err}",
         "items.photo_hint": "拖入或点选图片后，按「添加图片」立即生效，可继续调整顺序",
+        "items.photo_hint_draft": "拖入或点选图片，按「添加图片」加入下方暂存并预览，点「保存物品」一并生效",
+        "items.staged_images": "📷 待添加图片（点「保存物品」时生效，可调整顺序）：",
         "items.image_missing": "(图片文件缺失)",
         "items.img_up": "⬆️ 上移",
         "items.img_down": "⬇️ 下移",
@@ -176,7 +180,6 @@ TRANSLATIONS = {
         "import.err_price": "价格 '{val}' 不是数字",
 
         # ==================== 容器管理 ====================
-        "containers.title": "📦 容器管理",
         "containers.confirm_title": "⚠️ 确认删除",
         "containers.confirm_msg": "你确定要永久删除选中的 **{n}** 个容器吗？({names})",
         "containers.deleted": "已删除 {n} 个容器",
@@ -229,6 +232,8 @@ TRANSLATIONS = {
         "containers.no_photos_selected": "请先选择要添加的照片",
         "containers.photo_add_fail": "添加照片失败: {err}",
         "containers.photo_hint": "拖入或点选照片后，按「添加照片」立即生效，可继续调整顺序",
+        "containers.photo_hint_draft": "拖入或点选照片，按「添加照片」加入下方暂存并预览，点「添加」一并生效",
+        "containers.staged_images": "📷 待添加照片（点「添加」时生效，可调整顺序）：",
         "containers.jump_item_hint": "已在「物品浏览」标签打开物品详情",
         "containers.none_value": "无",
 
@@ -245,6 +250,9 @@ TRANSLATIONS = {
         "dash.hot_tags": "🏷️ 热门标签",
         "dash.col_tag": "标签",
         "dash.col_times": "出现次数",
+        "dash.container_value": "📦 各容器价值（Value by Container）",
+        "dash.year_value": "📅 按采购年份价值（Value by Purchase Year）",
+        "dash.col_value": "价值",
 
         # ==================== 时间线 / 标签墙 / 容器树 ====================
         "timeline.expander": "📆 {year}年 ({count}件)",
@@ -261,6 +269,8 @@ TRANSLATIONS = {
         "app.title": "Personal Warehouse",
         "app.main_title": "🧰 My Warehouse",
         "app.backup_fail": "Auto backup failed: {err}",
+        "app.fullscreen": "⛶ Maximize",
+        "app.exit_fullscreen": "Exit Maximize (Esc)",
         "app.tab.items": "📦 Items",
         "app.tab.dashboard": "📊 Dashboard",
         "app.tab.timeline": "⏳ Timeline",
@@ -336,6 +346,8 @@ TRANSLATIONS = {
         "items.no_photos_selected": "Please select photos to add first",
         "items.photo_add_fail": "Failed to add photos: {err}",
         "items.photo_hint": "Drop or pick photos, then click Add Photos — takes effect immediately, reorderable right after",
+        "items.photo_hint_draft": "Drop or pick photos, click Add Photos to stage & preview; they are saved with the item on Save Item",
+        "items.staged_images": "📷 Staged photos (saved with the item, reorderable):",
         "items.image_missing": "(image file missing)",
         "items.img_up": "⬆️ Up",
         "items.img_down": "⬇️ Down",
@@ -413,7 +425,6 @@ TRANSLATIONS = {
         "import.err_price": "Price '{val}' is not a number",
 
         # ==================== Containers ====================
-        "containers.title": "📦 Container Management",
         "containers.confirm_title": "⚠️ Confirm Delete",
         "containers.confirm_msg": "Delete the selected **{n}** containers permanently? ({names})",
         "containers.deleted": "Deleted {n} containers",
@@ -466,6 +477,8 @@ TRANSLATIONS = {
         "containers.no_photos_selected": "Please select photos to add first",
         "containers.photo_add_fail": "Failed to add photos: {err}",
         "containers.photo_hint": "Drop or pick photos, then click Add Photos — takes effect immediately, reorderable right after",
+        "containers.photo_hint_draft": "Drop or pick photos, click Add Photos to stage & preview; they are saved with the container on Add",
+        "containers.staged_images": "📷 Staged photos (saved on Add, reorderable):",
         "containers.jump_item_hint": "Item details opened in the Items tab",
         "containers.none_value": "None",
 
@@ -482,6 +495,9 @@ TRANSLATIONS = {
         "dash.hot_tags": "🏷️ Hot Tags",
         "dash.col_tag": "Tag",
         "dash.col_times": "Occurrences",
+        "dash.container_value": "📦 Value by Container",
+        "dash.year_value": "📅 Value by Purchase Year",
+        "dash.col_value": "Value",
 
         # ==================== Timeline / Tags / Tree ====================
         "timeline.expander": "📆 {year} ({count} items)",

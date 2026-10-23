@@ -1,10 +1,15 @@
 # -*- coding: utf-8 -*-
-"""物品新增子页面：录入表单（编号/容器/日期均无预填 + 标签 + 多图）+ CSV 批量导入。
+"""物品新增子页面：录入表单（编号/容器/日期均无预填 + 标签 + 照片暂存）+ CSV 批量导入。
 
 原为独立 Tab（「➕ 新增物品」），Phase 7 起收进「物品浏览」Tab 作为子页面
 （与详情/编辑子页面同级的 add_item_mode 态）：入口按钮放在物品 Tab 浏览态
 顶部，从其他 Tab 不应直接进入新增页，否则会覆盖当前浏览状态、造成逻辑混乱。
 保存成功后在本 Tab 内直接打开新物品详情，不再需要跨 Tab 跳转机制。
+
+照片交互与编辑页同款（Step 4 对齐）：上传器与「添加图片」按钮在表单外独立成区，
+选中的照片先进暂存区预览、可上移/下移/移除，点「保存物品」时随 add_item
+一并落库（repo 层按内容 sha256 去重）；暂存列表存 session_state（UploadedFile
+跨 rerun 保留），保存/取消即清空，避免残留到下一次新增。
 """
 import pandas as pd
 import streamlit as st
@@ -14,6 +19,9 @@ import i18n
 
 
 def render(conn, container_options):
+    # 照片暂存区（表单外）：先选文件 → 「添加图片」加入暂存并预览 → 保存时一并生效
+    staged = st.session_state.setdefault('add_staged_photos', [])
+
     with st.form("add_item", clear_on_submit=True):
         st.subheader(i18n.t("add.title"))
         col1, col2 = st.columns(2)
@@ -41,9 +49,6 @@ def render(conn, container_options):
                                           help=i18n.t("form.related_help"))
         features = st.text_area(i18n.t("form.features"))
         description = st.text_area(i18n.t("form.description"))
-        uploaded_files = st.file_uploader(i18n.t("add.upload_images"),
-                                          type=['jpg', 'jpeg', 'png', 'gif', 'webp'],
-                                          accept_multiple_files=True)
 
         col_btn1, col_btn2 = st.columns([1, 4])
         with col_btn1:
@@ -52,7 +57,8 @@ def render(conn, container_options):
             cancel = st.form_submit_button(i18n.t("common.cancel"))
 
         if cancel:
-            # 取消新增：回到物品浏览态（新增页是物品 Tab 的子页面，不是独立 Tab）
+            # 取消新增：清空照片暂存（避免下次进入残留上次的草稿）并回到物品浏览态
+            st.session_state.add_staged_photos = []
             st.session_state.add_item_mode = False
             st.rerun()
 
@@ -63,13 +69,14 @@ def render(conn, container_options):
                 st.error(i18n.t("add.item_no_exists", item_no=item_no))
             else:
                 try:
+                    # 暂存照片随保存一并落库（repo.add_item → attach_item_images 内容去重）
                     item_id = repo.add_item(conn, item_no, name,
                                             container_options.get(container_name),  # 占位未选 → 未归档
                                             purchase_date.strftime('%Y-%m-%d') if (purchase_date and not no_date) else '',
                                             platform, order_no, price, features, description,
-                                            tags, uploaded_files, repo.parse_related_text(related_items))
-                    # 保存成功：退出新增态并直接打开新物品详情，用户立刻看到录入结果
-                    # （新增入口已收进物品 Tab，无需 goto_tab 跨 Tab 跳转）
+                                            tags, list(staged), repo.parse_related_text(related_items))
+                    # 保存成功：清暂存、退出新增态并直接打开新物品详情
+                    st.session_state.add_staged_photos = []
                     st.session_state.detail_item_id = item_id
                     st.session_state.add_item_mode = False
                     st.toast(i18n.t("add.saved", item_no=item_no), icon="🎉")
@@ -78,6 +85,65 @@ def render(conn, container_options):
                     db.logger.exception("保存物品失败")
                     st.error(i18n.t("add.save_fail", err=e))
                     conn.rollback()
+
+    # ==================== 照片暂存区（表单外，与编辑页同款布局） ====================
+    # 表单字段在点暂存区按钮的 rerun 中保留（Streamlit form 未提交时控件状态持久）
+    col_up, col_btn = st.columns([3, 1])
+    with col_up:
+        new_files = st.file_uploader(i18n.t("add.upload_images"),
+                                     type=['jpg', 'jpeg', 'png', 'gif', 'webp'],
+                                     accept_multiple_files=True, key="add_uploaded_files")
+        st.caption(i18n.t("items.photo_hint_draft"))
+    with col_btn:
+        # keyed 容器供 CSS 垂直居中（相对上传框），见 app.py .st-key-*_photo_add_btn
+        with st.container(key="add_photo_btn"):
+            add_clicked = st.button(i18n.t("items.add_photos"), key="add_stage_photos",
+                                    use_container_width=True)
+        if add_clicked:
+            if not new_files:
+                st.warning(i18n.t("items.no_photos_selected"))
+            else:
+                # 按 (文件名, 大小) 防重复加入暂存（保存落库时另有内容级去重兜底）
+                seen = {(f.name, f.size) for f in staged}
+                add = [f for f in new_files if (f.name, f.size) not in seen]
+                if add:
+                    staged.extend(add)
+                    st.toast(i18n.t("items.photos_added", n=len(add)), icon="🖼️")
+                else:
+                    st.warning(i18n.t("items.photos_none_new"))
+                st.rerun()
+
+    if staged:
+        st.write(i18n.t("items.staged_images"))
+        for idx, f in enumerate(staged):
+            col_img, col_mv_up, col_mv_down, col_del = st.columns([3, 1, 1, 1])
+            with col_img:
+                st.image(f, width=120)
+            with col_mv_up:
+                if idx > 0:
+                    if st.button(i18n.t("items.img_up"), key=f"staged_up_{idx}",
+                                 use_container_width=True):
+                        staged[idx - 1], staged[idx] = staged[idx], staged[idx - 1]
+                        st.rerun()
+                else:
+                    st.button(i18n.t("items.img_up"), key=f"staged_up_{idx}_disabled",
+                              disabled=True, use_container_width=True)
+            with col_mv_down:
+                if idx < len(staged) - 1:
+                    if st.button(i18n.t("items.img_down"), key=f"staged_down_{idx}",
+                                 use_container_width=True):
+                        staged[idx + 1], staged[idx] = staged[idx], staged[idx + 1]
+                        st.rerun()
+                else:
+                    st.button(i18n.t("items.img_down"), key=f"staged_down_{idx}_disabled",
+                              disabled=True, use_container_width=True)
+            with col_del:
+                if st.button(i18n.t("items.img_del"), key=f"staged_del_{idx}",
+                             use_container_width=True):
+                    staged.pop(idx)
+                    st.rerun()
+    else:
+        st.caption(i18n.t("common.no_images"))
 
     # ==================== CSV 批量导入区（表单外） ====================
     st.divider()
@@ -129,7 +195,7 @@ def render(conn, container_options):
                         st.success(msg)
                         if imp_errors:
                             st.dataframe(pd.DataFrame(imp_errors, columns=[i18n.t("import.row_no"),
-                                                                            i18n.t("import.error")]),
+                                                                           i18n.t("import.error")]),
                                          use_container_width=True, height=160)
                         st.rerun()
                     except Exception as e:

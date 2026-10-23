@@ -21,7 +21,7 @@ def render(conn, search, tag_filter):
         container_count = df_all['container_name'].nunique()
         st.metric(i18n.t("dash.container_count"), container_count)
 
-    # 容器分布
+    # 容器分布（数量）
     st.subheader(i18n.t("dash.container_dist"))
     if not df_all.empty:
         container_stats = df_all['container_name'].value_counts().reset_index()
@@ -30,13 +30,34 @@ def render(conn, search, tag_filter):
     else:
         st.info(i18n.t("common.no_data"))
 
-    # 购买年份分布
+    # 各容器价值（按价格求和，与上方数量图成对）
+    st.subheader(i18n.t("dash.container_value"))
+    if not df_all.empty:
+        val_by_container = (df_all.groupby('container_name')['price'].sum()
+                            .sort_values(ascending=False).reset_index())
+        val_by_container.columns = [i18n.t("dash.col_container"), i18n.t("dash.col_value")]
+        st.bar_chart(val_by_container.set_index(i18n.t("dash.col_container")))
+    else:
+        st.info(i18n.t("common.no_data"))
+
+    # 购买年份分布（数量）
     st.subheader(i18n.t("dash.year_dist"))
     if not df_all.empty:
         df_all['year'] = pd.to_datetime(df_all['purchase_date'], errors='coerce').dt.year
         year_stats = df_all['year'].value_counts().sort_index().reset_index()
         year_stats.columns = [i18n.t("dash.col_year"), i18n.t("dash.col_count")]
         st.bar_chart(year_stats.set_index(i18n.t("dash.col_year")))
+    else:
+        st.info(i18n.t("common.no_data"))
+
+    # 按采购年份价值（按价格求和，与上方数量图成对）
+    st.subheader(i18n.t("dash.year_value"))
+    if not df_all.empty:
+        _yr = pd.to_datetime(df_all['purchase_date'], errors='coerce').dt.year
+        val_by_year = (df_all.assign(year=_yr).groupby('year')['price'].sum()
+                       .sort_index().reset_index())
+        val_by_year.columns = [i18n.t("dash.col_year"), i18n.t("dash.col_value")]
+        st.bar_chart(val_by_year.set_index(i18n.t("dash.col_year")))
     else:
         st.info(i18n.t("common.no_data"))
 
