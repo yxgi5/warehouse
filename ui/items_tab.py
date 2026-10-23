@@ -131,6 +131,8 @@ def start_edit(conn, item_id, container_options):
     st.session_state.edit_platform = item['platform']
     st.session_state.edit_order_no = item['order_no']
     st.session_state.edit_price = float(item['price'])
+    st.session_state.edit_quantity = int(item['quantity']) if item.get('quantity') is not None else 1
+    st.session_state.edit_unit = item['unit'] or ''
     st.session_state.edit_tags = item['tags']
     # 编辑框预填当前手动关联的编号（逗号分隔），保存时整体重建
     st.session_state.edit_related_items = ", ".join(
@@ -163,6 +165,10 @@ def render_edit_mode(conn, item_data, container_options):
             order_no = st.text_input(i18n.t("form.order_no"), key="edit_order_no")
             price = st.number_input(i18n.t("form.price"), min_value=0.0, format="%.2f", step=0.1,
                                     key="edit_price")
+            quantity = st.number_input(i18n.t("form.quantity"), min_value=1, step=1, value=1,
+                                      key="edit_quantity")
+            unit = st.text_input(i18n.t("form.unit"), key="edit_unit",
+                                 placeholder=i18n.t("form.unit_ph"))
             tags = st.text_input(i18n.t("form.tags"), key="edit_tags")
             related_items = st.text_input(i18n.t("form.related_items"), key="edit_related_items",
                                           help=i18n.t("form.related_help"))
@@ -188,7 +194,8 @@ def render_edit_mode(conn, item_data, container_options):
                                      container_options.get(container_name),   # 未归档占位 → None
                                      '' if no_date else purchase_date.strftime('%Y-%m-%d'),
                                      platform, order_no, price, features, description, tags,
-                                     None, repo.parse_related_text(related_items))
+                                     None, repo.parse_related_text(related_items),
+                                     quantity, unit)
                     st.session_state.edit_item_id = None
                     st.toast(i18n.t("items.updated"), icon="🎉")
                     st.rerun()
@@ -360,6 +367,11 @@ def render_detail_page(conn, item, container_options):
         st.write(f"{i18n.t('items.f_order_no')}: {item['order_no']}")
         price_text = f"¥{item['price']:.2f}" if item['price'] else i18n.t("items.not_set")
         st.write(f"{i18n.t('items.f_price')}: {price_text}")
+        qty = item.get('quantity') or 1
+        unit_text = (item.get('unit') or '').strip()
+        st.write(f"{i18n.t('items.f_quantity')}: {qty}{(' ' + unit_text) if unit_text else ''}")
+        if item['price']:
+            st.write(f"{i18n.t('items.f_subtotal')}: ¥{item['price'] * qty:.2f}")
         st.write(f"{i18n.t('items.f_tags')}: {item['tags']}")
     if item['features']:
         st.write(f"{i18n.t('items.f_features')}: {item['features']}")
@@ -370,11 +382,15 @@ def render_detail_page(conn, item, container_options):
 # ==================== 列表视图 ====================
 
 def render_list_view(conn, df_all, total_items, container_options):
-    df_display = df_all[['id', 'item_no', 'name', 'container_name', 'purchase_date', 'platform', 'price', 'tags']].copy()
+    df_display = df_all[['id', 'item_no', 'name', 'container_name', 'purchase_date', 'platform',
+                        'price', 'quantity', 'tags']].copy()
+    # 小计 = 单价 × 数量（数值先算，再格式化；数量缺省按 1）
+    df_display['subtotal'] = (df_display['price'].fillna(0) * df_display['quantity'].fillna(1))
     # NaN（库中 NULL 价格读入 pandas）与 0（表单默认值=未设置）都显示空串，
     # 仅真实价格格式化（if x 会把 0.0 判空，但 NaN 是 truthy 会漏成 ¥nan）
     df_display['price'] = df_display['price'].apply(
         lambda x: f"¥{x:.2f}" if pd.notna(x) and x else "")
+    df_display['subtotal'] = df_display['subtotal'].apply(lambda x: f"¥{x:.2f}" if x else "")
 
     # --- 表格（Step 2：包一层带 key 容器供 CSS/JS 定位，高度自适应视口；
     # height=300 仅作无 JS 时的兜底）---
@@ -397,6 +413,8 @@ def render_list_view(conn, df_all, total_items, container_options):
                 "purchase_date": i18n.t("form.purchase_date"),
                 "platform": i18n.t("form.platform"),
                 "price": i18n.t("form.price"),
+                "quantity": i18n.t("form.quantity"),
+                "subtotal": i18n.t("items.subtotal"),
                 "tags": i18n.t("form.tags")
             }
         )

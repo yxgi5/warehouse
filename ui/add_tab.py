@@ -30,7 +30,7 @@ def render(conn, container_options):
             # 自动编号 next_item_no 保留给 CSV 导入等场景。容器与购买日期可填但默认
             # 不给内容：容器下拉首项占位=不选（保存为未归档），日期默认无（不默认今天）。
             item_no = st.text_input(i18n.t("add.item_no"), key="draft_item_no")
-            name = st.text_input(i18n.t("form.name"))
+            name = st.text_input(i18n.t("form.name"), key="add_name")
             cont_opts = [i18n.t("add.select_container")] + list(container_options.keys())
             container_name = st.selectbox(i18n.t("form.container"), cont_opts)
             # date_input 无法原生留空（不给 value 也默认今天）。勾选框是保存语义：
@@ -43,8 +43,10 @@ def render(conn, container_options):
         with col2:
             platform = st.text_input(i18n.t("form.platform"))
             order_no = st.text_input(i18n.t("form.order_no"))
-            price = st.number_input(i18n.t("form.price"), min_value=0.0, format="%.2f", step=0.1)
-            tags = st.text_input(i18n.t("form.tags"))
+            price = st.number_input(i18n.t("form.price"), min_value=0.0, format="%.2f", step=0.1, key="add_price")
+            quantity = st.number_input(i18n.t("form.quantity"), min_value=1, step=1, value=1, key="add_quantity")
+            unit = st.text_input(i18n.t("form.unit"), placeholder=i18n.t("form.unit_ph"), key="add_unit")
+            tags = st.text_input(i18n.t("form.tags"), key="add_tags")
             related_items = st.text_input(i18n.t("form.related_items"),
                                           help=i18n.t("form.related_help"))
         features = st.text_area(i18n.t("form.features"))
@@ -74,7 +76,8 @@ def render(conn, container_options):
                                             container_options.get(container_name),  # 占位未选 → 未归档
                                             purchase_date.strftime('%Y-%m-%d') if (purchase_date and not no_date) else '',
                                             platform, order_no, price, features, description,
-                                            tags, list(staged), repo.parse_related_text(related_items))
+                                            tags, list(staged), repo.parse_related_text(related_items),
+                                            quantity=quantity, unit=unit)
                     # 保存成功：清暂存、退出新增态并直接打开新物品详情
                     st.session_state.add_staged_photos = []
                     st.session_state.detail_item_id = item_id

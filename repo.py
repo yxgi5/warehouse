@@ -19,7 +19,7 @@ import i18n
 def load_item_by_id(conn, item_id):
     c = conn.cursor()
     c.execute('''SELECT i.id, i.item_no, i.name, i.container_id, i.purchase_date, i.platform,
-                      i.order_no, i.price, i.features, i.description,
+                      i.order_no, i.price, i.features, i.description, i.quantity, i.unit,
                       (SELECT GROUP_CONCAT(t.name, ',') FROM item_tags it JOIN tags t
                        ON it.tag_id = t.id WHERE it.item_id = i.id) AS tags
                FROM items i WHERE i.id=?''', (item_id,))
@@ -30,7 +30,8 @@ def load_item_by_id(conn, item_id):
         'id': row[0], 'item_no': row[1], 'name': row[2], 'container_id': row[3],
         'purchase_date': row[4], 'platform': row[5] or '', 'order_no': row[6] or '',
         'price': row[7] or 0.0, 'features': row[8] or '', 'description': row[9] or '',
-        'tags': row[10] or ''
+        'quantity': row[10] if row[10] is not None else 1, 'unit': row[11] or '',
+        'tags': row[12] or ''
     }
 
 
@@ -44,10 +45,12 @@ def item_no_exists(conn, item_no, exclude_id=None):
 
 
 def add_item(conn, item_no, name, container_id, purchase_date, platform, order_no,
-             price, features, description, tags, uploaded_files, related_nos=None):
+             price, features, description, tags, uploaded_files, related_nos=None,
+             quantity=1, unit=''):
     """新增物品（含标签关联、图片落盘与手动关联）。返回新物品 id。
     related_nos 为关联的已有物品编号列表：等于本物品编号的静默忽略（自关联无意义），
-    任一编号不存在则抛 ValueError——先整体校验再动库，绝不写一半。"""
+    任一编号不存在则抛 ValueError——先整体校验再动库，绝不写一半。
+    quantity/unit：物品数量与单位（price 视为单价，总价值=单价×数量）。"""
     c = conn.cursor()
     if related_nos:
         link_ids, missing = _resolve_linked_ids(
@@ -57,10 +60,10 @@ def add_item(conn, item_no, name, container_id, purchase_date, platform, order_n
     else:
         link_ids = []
     c.execute('''INSERT INTO items (item_no, name, container_id, purchase_date, platform,
-                                    order_no, price, features, description)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                                    order_no, price, features, description, quantity, unit)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
               (item_no, name, container_id, purchase_date, platform, order_no,
-               price, features, description))
+               price, features, description, quantity, unit))
     item_id = c.lastrowid
     set_item_tags(conn, item_id, tags)
     attach_item_images(conn, item_id, uploaded_files)
@@ -102,10 +105,11 @@ def attach_item_images(conn, item_id, uploaded_files):
 
 def update_item(conn, item_id, item_no, name, container_id, purchase_date, platform,
                 order_no, price, features, description, tags, uploaded_files,
-                related_nos=None):
+                related_nos=None, quantity=1, unit=''):
     """更新物品（含标签重建与新图片追加）。related_nos=None 不改动关联；
     传入列表则整体重建手动关联（编辑框内容即最终状态），自身编号静默忽略，
-    不存在的编号先整体报错——校验通过前不写库。"""
+    不存在的编号先整体报错——校验通过前不写库。
+    quantity/unit：物品数量与单位（price 视为单价，总价值=单价×数量）。"""
     c = conn.cursor()
     if related_nos is not None:
         link_ids, missing = _resolve_linked_ids(conn, related_nos, exclude_id=item_id)
@@ -114,10 +118,11 @@ def update_item(conn, item_id, item_no, name, container_id, purchase_date, platf
     else:
         link_ids = None
     c.execute('''UPDATE items SET item_no=?, name=?, container_id=?, purchase_date=?,
-                                 platform=?, order_no=?, price=?, features=?, description=?
+                                 platform=?, order_no=?, price=?, features=?, description=?,
+                                 quantity=?, unit=?
                  WHERE id=?''',
               (item_no, name, container_id, purchase_date, platform, order_no,
-               price, features, description, item_id))
+               price, features, description, quantity, unit, item_id))
     set_item_tags(conn, item_id, tags)
     attach_item_images(conn, item_id, uploaded_files)   # 追加去重（无文件时为 0）
     if link_ids is not None:
@@ -199,6 +204,7 @@ def get_filtered_data(conn, search, tag_filter):
           + 标签精确匹配（多标签 AND）。"""
     query = '''SELECT items.id, items.item_no, items.name, items.container_id, items.purchase_date,
                       items.platform, items.order_no, items.price, items.features, items.description,
+                      items.quantity, items.unit,
                       containers.name as container_name,
                       (SELECT GROUP_CONCAT(t.name, ',') FROM item_tags it JOIN tags t
                        ON it.tag_id = t.id WHERE it.item_id = items.id) AS tags
@@ -543,14 +549,15 @@ def load_items_by_container(conn, cid):
 
 # CSV 表头（与 items 字段对齐；item_no 留空则导入时自动生成）
 IMPORT_COLUMNS = ['item_no', 'name', 'container', 'purchase_date', 'platform', 'order_no',
-                  'price', 'features', 'description', 'tags']
+                  'price', 'quantity', 'unit', 'features', 'description', 'tags']
 
 
 def import_template_csv():
     """生成带示例行的模板 CSV 文本（UTF-8 带 BOM，Excel 可直接打开）。
-    示例行不指定容器——填自己已建的容器名即可，不存在的容器名会被逐行报错。"""
+    示例行不指定容器——填自己已建的容器名即可，不存在的容器名会被逐行报错。
+    quantity 默认 1（空或非数字），unit 可空。"""
     rows = [",".join(IMPORT_COLUMNS),
-            ",示例物品,,2026-08-20,京东,JD123456,99.9,全新,备注,数码;充电器"]
+            ",示例物品,,2026-08-20,京东,JD123456,99.9,2,个,全新,备注,数码;充电器"]
     return "\n".join(rows) + "\n"
 
 
@@ -596,6 +603,10 @@ def parse_import_csv(uploaded_file, container_options):
     for i, rec in df.iterrows():
         line_no = i + 2   # 第 1 行是表头
         d = {c: str(rec[c]).strip() if rec[c] is not None else '' for c in IMPORT_COLUMNS}
+        # 数量：空或非整数 → 默认 1；单位保留原值（可空）
+        q_raw = d.get('quantity', '').strip()
+        d['quantity'] = int(q_raw) if q_raw.isdigit() else 1
+        d['unit'] = d.get('unit', '').strip()
 
         if not d['name']:
             errors.append((line_no, i18n.t("import.err_name")))
@@ -631,7 +642,7 @@ def import_items(conn, rows):
             try:
                 add_item(conn, item_no, d['name'], d['container_id'], d['purchase_date'],
                          d['platform'], d['order_no'], d['price'], d['features'],
-                         d['description'], d['tags'], [])
+                         d['description'], d['tags'], [], quantity=d['quantity'], unit=d['unit'])
                 ok += 1
                 break
             except sqlite3.IntegrityError as ie:

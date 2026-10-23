@@ -64,10 +64,12 @@ def init_db(conn=None):
             id INTEGER PRIMARY KEY, item_no TEXT UNIQUE, name TEXT, container_id INTEGER
                 REFERENCES containers(id) ON DELETE RESTRICT,
             purchase_date TEXT, platform TEXT, order_no TEXT, price REAL,
-            features TEXT, description TEXT, tags TEXT)''')
+            features TEXT, description TEXT, tags TEXT,
+            quantity INTEGER NOT NULL DEFAULT 1, unit TEXT)''')
         migrate_schema(conn)   # 旧版无外键的表结构升级（必须先于新表创建）
         migrate_container_note(conn)   # 旧库 containers 补 note 列（幂等）
         migrate_images_shared(conn)   # images 升级为图片池+item_images（多物品共用，幂等）
+        migrate_item_qty(conn)        # 旧 items 补 quantity/unit 列（幂等）
         c.execute('''CREATE TABLE IF NOT EXISTS tags (
             id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL)''')
         c.execute('''CREATE TABLE IF NOT EXISTS item_tags (
@@ -193,11 +195,12 @@ def migrate_schema(conn):
                 id INTEGER PRIMARY KEY, item_no TEXT UNIQUE, name TEXT, container_id INTEGER
                     REFERENCES containers(id) ON DELETE RESTRICT,
                 purchase_date TEXT, platform TEXT, order_no TEXT, price REAL,
-                features TEXT, description TEXT, tags TEXT)''',
+                features TEXT, description TEXT, tags TEXT,
+                quantity INTEGER NOT NULL DEFAULT 1, unit TEXT)''',
             "INSERT INTO items (id, item_no, name, container_id, purchase_date, "
-            "platform, order_no, price, features, description, tags) "
+            "platform, order_no, price, features, description, tags, quantity, unit) "
             "SELECT id, item_no, name, container_id, purchase_date, "
-            "platform, order_no, price, features, description, tags FROM items_old")
+            "platform, order_no, price, features, description, tags, 1, NULL FROM items_old")
         _migrate_group(
             conn, "images",
             '''CREATE TABLE images (
@@ -219,6 +222,19 @@ def migrate_container_note(conn):
     if 'note' not in cols:
         conn.execute("ALTER TABLE containers ADD COLUMN note TEXT")
         conn.commit()
+
+
+# 物品补 quantity/unit 列（数量/单位）：ALTER TABLE ADD COLUMN 幂等——
+# 新库建表已带（无操作）；经 migrate_schema rename→create→copy 重建的旧库
+# 表结构不含这两列（copy 源也无此列），在此补齐，历史物品 quantity=1（原 price
+# 视为单价，总价值=单价×数量，history 数据 quantity=1 价值不变）、unit 为空。
+def migrate_item_qty(conn):
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(items)")}
+    if 'quantity' not in cols:
+        conn.execute("ALTER TABLE items ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1")
+    if 'unit' not in cols:
+        conn.execute("ALTER TABLE items ADD COLUMN unit TEXT")
+    conn.commit()
 
 
 # images 升级为「图片池 + item_images 关联表」（多物品可共用一张图）：
