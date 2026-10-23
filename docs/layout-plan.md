@@ -266,3 +266,37 @@ header 与工具栏同步跟随到 `left=0/w=1904`）。
 - `i18n.py` 新增 `containers.photo_hint_draft`（暂存提示）、`containers.staged_images`（暂存区标题）。
 - **实测（selenium 全流程）**：进容器新增页 → 选 2 图 → 暂存预览 2 张 → 上移交换 →
   填名提交 → `container_images` 落库 2 条，测试数据清理；smoke / e2e / i18n 17 / data 139 全绿。
+
+### Items 增加数量(quantity)/单位(unit)字段（用户追加需求，已完成）
+
+用户需求：物品数量之前只在名称/说明里用"3 个""一盒"等自由文本体现，不可检索、不可汇总；
+要求加结构化数量字段，并把 `price` 明确为**单价**，总价值 = 单价 × 数量（Dashboard 价值图随之校正）。
+
+- **数据层**
+  - `db.py`：`items` 建表 DDL 与 `_migrate_group` 重建 DDL 都加 `quantity INTEGER NOT NULL DEFAULT 1`
+    + `unit TEXT`；新增幂等迁移 `migrate_item_qty`（旧库 ALTER TABLE 补齐，历史物品 quantity=1、
+    unit 空 → 总价值不变）；`init_db` 调用之。
+  - `repo.py`：
+    - `add_item` / `update_item` 新增 `quantity=1, unit=''` 参数并落库；
+    - `load_item_by_id` 返回字典**修正下标**（新增列后 `tags` 顺移）→ 补 `quantity/unit`；
+    - `get_filtered_data` SELECT 补 `items.quantity, items.unit`；
+    - CSV 导入：`IMPORT_COLUMNS` 加 `quantity, unit`，`import_template_csv` 示例补两列，
+      `parse_import_csv` 归一（空/非数字→1，unit 去空格），`import_items` 透传。
+- **UI（新增页 + 编辑页，两处都改——用户专门关注）**
+  - `ui/add_tab.py`（新增页）：表单 col2 加 `数量` number_input(默认1, key=`add_quantity`) +
+    `单位` text_input(key=`add_unit`)；保存传 `quantity, unit`。**为测试稳定给表单关键输入
+    加 key**：`add_name/add_price/add_tags/add_quantity/add_unit`。
+  - `ui/items_tab.py`（编辑页）：`start_edit` 预填 `edit_quantity/edit_unit`；col2 加同款
+    `数量`(key=`edit_quantity`)/`单位`(key=`edit_unit`)；保存传 `quantity, unit`；
+    详情页展示"数量 + 单位 + 小计(单价×数量)"；列表视图加 `数量` 列与 `小计` 列。
+- **Dashboard**：`total_value` 与两张价值图(各容器/各年份) 均由 `price.sum()` 改为
+  `(price * quantity).sum()`；新增第 4 个指标 `物品总件数 = Σquantity`。
+- **i18n**：中英文新增 `form.quantity`/`form.unit`/`form.unit_ph`/`items.f_quantity`/
+  `items.f_unit`/`items.f_subtotal`/`items.subtotal`/`dash.total_pieces`。
+- **测试修复（重要）**：`test_data_layer.py` 的样例 CSV 用硬拼字符串，加两列后易错位 →
+  改为**字段列表 `join`** 精确构造，消除"标签落错位列"类 bug；e2e 用下标定位控件
+  (`text_input[4]`=tags) 因插入 `unit` 文本输入而错位 → 改为**按 key 定位**
+  (`add_name/add_tags/add_price`)。
+- **实测**：data-layer 139 全绿（含 quantity/unit 落库与读取、CSV 导入）；i18n 15；smoke PASS；
+  e2e PASS（新增表单含新字段、提交 0 异常）；AppTest 针对性验证新增页数量=5/单位=盒、编辑页
+  改数量=9/单位=台均正确落库（框架残留控件时序怪癖，改用 e2e + data-layer 结论交叉确认）。

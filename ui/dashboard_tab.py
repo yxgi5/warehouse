@@ -11,15 +11,19 @@ def render(conn, search, tag_filter):
     df_all = repo.get_filtered_data(conn, search, tag_filter)
     total_items = len(df_all)
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric(i18n.t("dash.total_items"), total_items)
     with col2:
-        total_value = df_all['price'].sum()
+        # 总价值 = Σ(单价 × 数量)：price 视为单价，quantity 缺省按 1
+        total_value = (df_all['price'].fillna(0) * df_all['quantity'].fillna(1)).sum()
         st.metric(i18n.t("dash.total_value"), f"¥{total_value:.2f}" if total_value else i18n.t("dash.none"))
     with col3:
         container_count = df_all['container_name'].nunique()
         st.metric(i18n.t("dash.container_count"), container_count)
+    with col4:
+        total_pieces = int(df_all['quantity'].fillna(1).sum())
+        st.metric(i18n.t("dash.total_pieces"), total_pieces)
 
     # 容器分布（数量）
     st.subheader(i18n.t("dash.container_dist"))
@@ -33,7 +37,9 @@ def render(conn, search, tag_filter):
     # 各容器价值（按价格求和，与上方数量图成对）
     st.subheader(i18n.t("dash.container_value"))
     if not df_all.empty:
-        val_by_container = (df_all.groupby('container_name')['price'].sum()
+        # 各容器价值 = Σ(单价 × 数量)，随数量加权（不再简单加总单价）
+        _val = df_all.assign(_v=df_all['price'].fillna(0) * df_all['quantity'].fillna(1))
+        val_by_container = (_val.groupby('container_name')['_v'].sum()
                             .sort_values(ascending=False).reset_index())
         val_by_container.columns = [i18n.t("dash.col_container"), i18n.t("dash.col_value")]
         st.bar_chart(val_by_container.set_index(i18n.t("dash.col_container")))
@@ -54,8 +60,9 @@ def render(conn, search, tag_filter):
     st.subheader(i18n.t("dash.year_value"))
     if not df_all.empty:
         _yr = pd.to_datetime(df_all['purchase_date'], errors='coerce').dt.year
-        val_by_year = (df_all.assign(year=_yr).groupby('year')['price'].sum()
-                       .sort_index().reset_index())
+        # 各年份价值 = Σ(单价 × 数量)，随数量加权
+        val_by_year = (df_all.assign(year=_yr, _v=df_all['price'].fillna(0) * df_all['quantity'].fillna(1))
+                       .groupby('year')['_v'].sum().sort_index().reset_index())
         val_by_year.columns = [i18n.t("dash.col_year"), i18n.t("dash.col_value")]
         st.bar_chart(val_by_year.set_index(i18n.t("dash.col_year")))
     else:

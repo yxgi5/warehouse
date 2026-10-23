@@ -375,9 +375,10 @@ def main():
     i18n.set_lang("zh")   # 错误消息断言依赖中文（应用默认语言为英文）
     container_map = repo.get_container_options(conn)
     cname = list(container_map.keys())[0]
-    csv_ok = (f"item_no,name,container,purchase_date,platform,order_no,price,features,description,tags\n"
-              f",导入物1,{cname},2026-08-20,京东,JD1,99.9,全新,备注一,数码;充电器\n"
-              f",导入物2,{cname},2026-08-21,,,10,,,数码，保护壳\n").encode("utf-8-sig")
+    header = repo.IMPORT_COLUMNS
+    _r1 = ['', '导入物1', cname, '2026-08-20', '京东', 'JD1', '99.9', '2', '个', '全新', '备注一', '数码;充电器']
+    _r2 = ['', '导入物2', cname, '2026-08-21', '', '', '10', '1', '', '', '', '数码，保护壳']
+    csv_ok = ("\n".join([",".join(header), ",".join(_r1), ",".join(_r2)]) + "\n").encode("utf-8-sig")
     rows, errs = repo.parse_import_csv(fake_upload("imp.csv", csv_ok), container_map)
     check("parse_import_csv 有效 2 行", len(rows) == 2 and not errs, f"rows={len(rows)} errs={errs}")
     check("parse_import_csv 容器解析为 id", rows[0]['container_id'] == container_map[cname])
@@ -387,10 +388,10 @@ def main():
           f"{rows[0]['tags']} | {rows[1]['tags']}")
     check("parse_import_csv 价格转 float", rows[0]['price'] == 99.9)
 
-    csv_err = (f"item_no,name,container,purchase_date,platform,order_no,price,features,description,tags\n"
-               f",,{cname},,,,0,,,,\n"                  # 缺名称
-               f",坏容器,不存在的容器,,,,0,,,,\n"         # 容器不存在
-               f",坏价格,{cname},,,,abc,,,,\n").encode("utf-8")
+    _e1 = ['', '', cname, '', '', '', '0', '1', '', '', '', '']              # 缺名称
+    _e2 = ['', '坏容器', '不存在的容器', '', '', '', '0', '1', '', '', '', '']  # 容器不存在
+    _e3 = ['', '坏价格', cname, '', '', '', 'abc', '1', '', '', '', '']         # 价格非法
+    csv_err = ("\n".join([",".join(header), ",".join(_e1), ",".join(_e2), ",".join(_e3)]) + "\n").encode("utf-8")
     rows2, errs2 = repo.parse_import_csv(fake_upload("err.csv", csv_err), container_map)
     check("parse_import_csv 错误行全部识别", len(rows2) == 0 and len(errs2) == 3, str(errs2))
     check("parse_import_csv 错误信息含行号", all(isinstance(n, int) and n >= 2 for n, _ in errs2))
@@ -399,8 +400,8 @@ def main():
     _, errs3 = repo.parse_import_csv(fake_upload("bad.csv", csv_bad_header), container_map)
     check("parse_import_csv 表头错误被拒", len(errs3) == 1 and "表头" in errs3[0][1], str(errs3))
 
-    gbk_csv = (f"item_no,name,container,purchase_date,platform,order_no,price,features,description,tags\n"
-               f",GBK物品,{cname},,,,0,,,,\n").encode("gbk")
+    _g = ['', 'GBK物品', cname, '', '', '', '0', '1', '', '', '', '']
+    gbk_csv = ("\n".join([",".join(header), ",".join(_g)]) + "\n").encode("gbk")
     rows_g, errs_g = repo.parse_import_csv(fake_upload("gbk.csv", gbk_csv), container_map)
     check("parse_import_csv 支持 GBK 编码", len(rows_g) == 1 and rows_g[0]['name'] == "GBK物品", str(errs_g))
 
@@ -411,16 +412,16 @@ def main():
     check("导入物品已落库且自动编号", len(new_items) == 2
           and all(str(no).startswith("ITEM_") for no in new_items['item_no']), str(new_items['item_no'].tolist()))
     # 编号冲突行：手动占用编号后导入应记 error 不中断
-    dup_csv = (f"item_no,name,container,purchase_date,platform,order_no,price,features,description,tags\n"
-               f"{new_items.iloc[0]['item_no']},重复编号,{cname},,,,0,,,,\n"
-               f",第三件,{cname},,,,0,,,,\n").encode("utf-8")
+    _d1 = [new_items.iloc[0]['item_no'], '重复编号', cname, '', '', '', '0', '1', '', '', '', '']
+    _d2 = ['', '第三件', cname, '', '', '', '0', '1', '', '', '', '']
+    dup_csv = ("\n".join([",".join(header), ",".join(_d1), ",".join(_d2)]) + "\n").encode("utf-8")
     dup_rows, _ = repo.parse_import_csv(fake_upload("dup.csv", dup_csv), container_map)
     ok_n2, imp_errs2 = repo.import_items(conn, dup_rows)
     check("import_items 重复编号记 error 不中断", ok_n2 == 1 and len(imp_errs2) == 1, f"ok={ok_n2} errs={imp_errs2}")
     # 真实行号：解析阶段跳过的坏行不使导入阶段行号偏移（评审 P2-⑪）
-    mix_csv = (f"item_no,name,container,purchase_date,platform,order_no,price,features,description,tags\n"
-               f",,{cname},,,,0,,,,\n"  # 第 2 行：缺名称（解析跳过）
-               f"{new_items.iloc[0]['item_no']},撞号行,{cname},,,,0,,,,\n").encode("utf-8")  # 第 3 行
+    _m1 = ['', '', cname, '', '', '', '0', '1', '', '', '', '']   # 第 2 行：缺名称（解析跳过）
+    _m2 = [new_items.iloc[0]['item_no'], '撞号行', cname, '', '', '', '0', '1', '', '', '', '']  # 第 3 行
+    mix_csv = ("\n".join([",".join(header), ",".join(_m1), ",".join(_m2)]) + "\n").encode("utf-8")  # 第 3 行
     mix_rows, mix_errs = repo.parse_import_csv(fake_upload("mix.csv", mix_csv), container_map)
     check("真实行号：解析跳过缺名坏行", len(mix_rows) == 1 and len(mix_errs) == 1, str(mix_errs))
     _, mix_imp_errs = repo.import_items(conn, mix_rows)

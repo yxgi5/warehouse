@@ -103,9 +103,9 @@ def main():
     print("✅ 添加表单字段齐全且默认无内容（编号/容器/日期不预填）")
 
     at.text_input(key="draft_item_no").set_value("E2E_ITEM_001")
-    at.text_input[1].set_value("E2E测试物品")       # name（新增表单第二个 text_input）
-    at.text_input[4].set_value("端到端,回归")       # tags
-    at.number_input[0].set_value(123.45)            # price
+    at.text_input(key="add_name").set_value("E2E测试物品")       # name
+    at.text_input(key="add_tags").set_value("端到端,回归")       # tags
+    at.number_input(key="add_price").set_value(123.45)          # price
     # 容器/日期“可以填”：取消无日期勾选、各选一个真实值
     e2e_cont_name = conn.execute("SELECT name FROM containers ORDER BY id LIMIT 1").fetchone()[0]
     at.tabs[0].selectbox[0].set_value(e2e_cont_name)
