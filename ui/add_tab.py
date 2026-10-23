@@ -24,30 +24,48 @@ def render(conn, container_options):
 
     with st.form("add_item", clear_on_submit=True):
         st.subheader(i18n.t("add.title"))
-        col1, col2 = st.columns(2)
-        with col1:
-            # 编号由用户自行输入，不预填自动编号（真实使用中多为自有编号如 A0330）；
-            # 自动编号 next_item_no 保留给 CSV 导入等场景。容器与购买日期可填但默认
-            # 不给内容：容器下拉首项占位=不选（保存为未归档），日期默认无（不默认今天）。
+        # 逐行两列而非左右两个大列：每行行高取左右控件较大者，行起点严格对齐。
+        # 之前左右两大列内控件独立堆叠，勾选框（无上方 label，比输入框矮）之后的
+        # 行整体上移，与右栏错位。
+        # 编号由用户自行输入，不预填自动编号（真实使用中多为自有编号如 A0330）；
+        # 自动编号 next_item_no 保留给 CSV 导入等场景。容器与购买日期可填但默认
+        # 不给内容：容器下拉首项占位=不选（保存为未归档），日期默认无（不默认今天）。
+        c1, c2 = st.columns(2)
+        with c1:
             item_no = st.text_input(i18n.t("add.item_no"), key="draft_item_no")
+        with c2:
+            platform = st.text_input(i18n.t("form.platform"))
+        c1, c2 = st.columns(2)
+        with c1:
             name = st.text_input(i18n.t("form.name"), key="add_name")
+        with c2:
+            order_no = st.text_input(i18n.t("form.order_no"))
+        c1, c2 = st.columns(2)
+        with c1:
             cont_opts = [i18n.t("add.select_container")] + list(container_options.keys())
             container_name = st.selectbox(i18n.t("form.container"), cont_opts)
+        with c2:
+            price = st.number_input(i18n.t("form.price"), min_value=0.0, format="%.2f", step=0.1, key="add_price")
+        c1, c2 = st.columns(2)
+        with c1:
             # date_input 无法原生留空（不给 value 也默认今天）。勾选框是保存语义：
             # 默认勾选=无购买日期（存空）；取消勾选即可填日期。注意不能把 date_input
             # disabled 绑定到勾选框——form 内控件变化不触发 rerun，禁用状态不会刷新，
             # 会出现“勾了没反应/取消了仍不可填”。日期框始终保持可用。
+            purchase_date = st.date_input(i18n.t("form.purchase_date"))
+        with c2:
+            quantity = st.number_input(i18n.t("form.quantity"), min_value=1, step=1, value=1, key="add_quantity")
+        c1, c2 = st.columns(2)
+        with c1:
             no_date = st.checkbox(i18n.t("common.no_date"), value=True,
                                   help=i18n.t("common.no_date_help"))
-            purchase_date = st.date_input(i18n.t("form.purchase_date"))
+        with c2:
+            unit = st.text_input(i18n.t("form.unit"), placeholder=i18n.t("form.unit_ph"), key="add_unit")
+        c1, c2 = st.columns(2)
+        with c1:
             related_items = st.text_input(i18n.t("form.related_items"),
                                           help=i18n.t("form.related_help"))
-        with col2:
-            platform = st.text_input(i18n.t("form.platform"))
-            order_no = st.text_input(i18n.t("form.order_no"))
-            price = st.number_input(i18n.t("form.price"), min_value=0.0, format="%.2f", step=0.1, key="add_price")
-            quantity = st.number_input(i18n.t("form.quantity"), min_value=1, step=1, value=1, key="add_quantity")
-            unit = st.text_input(i18n.t("form.unit"), placeholder=i18n.t("form.unit_ph"), key="add_unit")
+        with c2:
             tags = st.text_input(i18n.t("form.tags"), key="add_tags")
         features = st.text_area(i18n.t("form.features"))
         description = st.text_area(i18n.t("form.description"))

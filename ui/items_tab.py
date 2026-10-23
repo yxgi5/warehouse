@@ -147,30 +147,47 @@ def start_edit(conn, item_id, container_options):
 def render_edit_mode(conn, item_data, container_options):
     st.subheader(i18n.t("items.edit_title", item_no=item_data['item_no'], name=item_data['name']))
     with st.form("edit_item_form", clear_on_submit=False):
-        col1, col2 = st.columns(2)
-        with col1:
+        # 逐行两列（与新增页同款）：每行行高取左右控件较大者，行起点严格对齐，
+        # 不会因勾选框比输入框矮而错位。
+        c1, c2 = st.columns(2)
+        with c1:
             item_no = st.text_input(i18n.t("form.item_no"), key="edit_item_no")
+        with c2:
+            platform = st.text_input(i18n.t("form.platform"), key="edit_platform")
+        c1, c2 = st.columns(2)
+        with c1:
             name = st.text_input(i18n.t("form.name"), key="edit_name")
+        with c2:
+            order_no = st.text_input(i18n.t("form.order_no"), key="edit_order_no")
+        c1, c2 = st.columns(2)
+        with c1:
             # "未归档"占位在首项：无容器物品可继续留空，也可随时改挂容器
             cont_opts = [i18n.t("items.unfiled")] + list(container_options.keys())
             container_name = st.selectbox(i18n.t("form.container"), cont_opts,
                                           key="edit_container_name")
-            # 无日期勾选框是保存语义；date_input 不能 disabled 联动（form 内控件
-            # 变化不 rerun，禁用态不刷新，会出现“取消勾选仍不可填”）
-            no_date = st.checkbox(i18n.t("common.no_date"), key="edit_no_date",
-                                  help=i18n.t("common.no_date_help"))
-            purchase_date = st.date_input(i18n.t("form.purchase_date"), key="edit_purchase_date")
-            related_items = st.text_input(i18n.t("form.related_items"), key="edit_related_items",
-                                          help=i18n.t("form.related_help"))
-        with col2:
-            platform = st.text_input(i18n.t("form.platform"), key="edit_platform")
-            order_no = st.text_input(i18n.t("form.order_no"), key="edit_order_no")
+        with c2:
             price = st.number_input(i18n.t("form.price"), min_value=0.0, format="%.2f", step=0.1,
                                     key="edit_price")
+        c1, c2 = st.columns(2)
+        with c1:
+            # 无日期勾选框是保存语义；date_input 不能 disabled 联动（form 内控件
+            # 变化不 rerun，禁用态不刷新，会出现“取消勾选仍不可填”）
+            purchase_date = st.date_input(i18n.t("form.purchase_date"), key="edit_purchase_date")
+        with c2:
             quantity = st.number_input(i18n.t("form.quantity"), min_value=1, step=1, value=1,
                                       key="edit_quantity")
+        c1, c2 = st.columns(2)
+        with c1:
+            no_date = st.checkbox(i18n.t("common.no_date"), key="edit_no_date",
+                                  help=i18n.t("common.no_date_help"))
+        with c2:
             unit = st.text_input(i18n.t("form.unit"), key="edit_unit",
                                  placeholder=i18n.t("form.unit_ph"))
+        c1, c2 = st.columns(2)
+        with c1:
+            related_items = st.text_input(i18n.t("form.related_items"), key="edit_related_items",
+                                          help=i18n.t("form.related_help"))
+        with c2:
             tags = st.text_input(i18n.t("form.tags"), key="edit_tags")
         features = st.text_area(i18n.t("form.features"), key="edit_features")
         description = st.text_area(i18n.t("form.description"), key="edit_description")
