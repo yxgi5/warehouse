@@ -95,9 +95,11 @@ def render(conn, container_options):
                                      accept_multiple_files=True, key="add_uploaded_files")
         st.caption(i18n.t("items.photo_hint_draft"))
     with col_btn:
-        st.write("")   # 与上传框大致对齐（caption 占一行）
-        if st.button(i18n.t("items.add_photos"), key="add_stage_photos",
-                     use_container_width=True):
+        # keyed 容器供 CSS 垂直居中（相对上传框），见 app.py .st-key-*_photo_add_btn
+        with st.container(key="add_photo_btn"):
+            add_clicked = st.button(i18n.t("items.add_photos"), key="add_stage_photos",
+                                    use_container_width=True)
+        if add_clicked:
             if not new_files:
                 st.warning(i18n.t("items.no_photos_selected"))
             else:

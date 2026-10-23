@@ -196,9 +196,12 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
                                          key="cedit_upload_files")
             st.caption(i18n.t("containers.photo_hint"))
         with col_btn:
-            st.write("")   # 与上传框大致对齐（caption 占一行）
-            if st.button(i18n.t("containers.add_photos"), key="cedit_add_photos",
-                         use_container_width=True):
+            # keyed 容器供 CSS 垂直居中（相对上传框），见 app.py .st-key-*_photo_add_btn
+            with st.container(key="container_photo_add_btn"):
+                add_clicked = st.button(i18n.t("containers.add_photos"),
+                                        key="cedit_add_photos",
+                                        use_container_width=True)
+            if add_clicked:
                 if not new_files:
                     st.warning(i18n.t("containers.no_photos_selected"))
                 else:

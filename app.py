@@ -242,6 +242,15 @@ body.wh-list-fullscreen .st-key-container_list_wrap [data-testid="stDataFrameRes
 .st-key-fs_exit > div { width: max-content !important; }
 body.wh-list-fullscreen .st-key-fs_exit { display: block !important; }
 .st-key-fs_exit button { white-space: nowrap !important; }
+/* 照片区「添加图片/添加照片」按钮相对上传框垂直居中：原先用空行占位、按钮偏上。
+   实测（selenium）：按钮列高=内容高、不随 flex 行拉伸，margin:auto 解析为 0 不居中；
+   改固定下移 47.5px（= 上传框中心 − 按钮中心：按钮高 40、Dropzone 高 79.1，
+   偏移由上传框上方 label 高度决定；Streamlit 升级致两者尺寸变化时需重测）。 */
+.st-key-edit_photo_add_btn,
+.st-key-add_photo_btn,
+.st-key-container_photo_add_btn {
+    margin-top: 47.5px !important;
+}
 </style>
 """, unsafe_allow_html=True)
 

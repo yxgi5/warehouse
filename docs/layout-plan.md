@@ -232,3 +232,18 @@ header 与工具栏同步跟随到 `left=0/w=1904`）。
   `dash.year_value`（📅 按采购年份价值 / Value by Purchase Year）、`dash.col_value`（价值 / Value）。
 - **实测（selenium）**：切到 Dashboard 标签，两张新看板文案存在、vega 图表共 4 张、无异常；
   i18n 键中英配对、smoke、data-layer 139 全绿。
+
+### 照片区「添加图片」按钮垂直居中（用户微调，已完成）
+
+用户反馈：上传框右侧的「➕ Add Photos」按钮偏上，要求下移至与上传框竖向居中。
+
+- `ui/items_tab.py`（编辑页）/ `ui/add_tab.py`（新增页）/ `ui/containers_tab.py`（容器编辑）：
+  三处同款布局，去掉 `st.write("")` 空行占位，按钮包进 keyed 容器
+  （`edit_photo_add_btn` / `add_photo_btn` / `container_photo_add_btn`），点击 handler 移出
+  with 块（缩进不变）。
+- `app.py`：`.st-key-*_photo_add_btn { margin-top: 47.5px }`。**踩坑**：原打算用
+  `margin:auto` 在按钮列内自动居中，实测按钮列高=内容高、不随 flex 行拉伸，auto 解析为 0；
+  改固定下移 47.5px（= 上传框中心 − 按钮中心，按钮高 40 + Dropzone 高 79.1，偏移由上传框
+  上方 label 高度决定；Streamlit 升级致尺寸变化时需重测）。
+- **实测（selenium）**：新增页/编辑页按钮中心与 Dropzone 中心偏差 0px（改前 -47.5）；
+  空选点击仍弹「请先选择」警告（handler 迁移无副作用）；smoke / e2e / i18n 17 / data 139 全绿。
