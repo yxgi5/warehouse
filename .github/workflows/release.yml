@@ -15,10 +15,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 若该 tag 的 release 已存在（例如在 GitHub 上手动发布过），直接跳过，
+      # 避免重复创建 draft 与已发布 release 撞车（v1.1.0 曾因此出现孤儿 draft）。
+      - name: Check if release already exists
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # tag 推送会同时触发 test.yml（同代依赖全量回归）；这里建 draft release，
       # 由用户在 GitHub 上确认测试绿后手动 Publish —— 避免“未测先发”，
       # 也无需跨 workflow 依赖。--generate-notes 自动生成提交变更清单。
       - name: Draft GitHub Release
+        if: steps.check.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" --draft --generate-notes --title "$GITHUB_REF_NAME"
