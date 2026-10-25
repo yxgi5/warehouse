@@ -17,12 +17,25 @@ import db
 import repo
 import i18n
 
+# 新增表单所有控件的 key 清单：因表单改为 clear_on_submit=False（校验失败时
+# 保留用户已录入数据，避免“编号重复”等报错后全丢失），成功/取消时由代码统一清空。
+ADD_FORM_KEYS = (
+    "draft_item_no", "add_name", "add_platform", "add_order_no", "add_container_name",
+    "add_price", "add_no_date", "add_quantity", "add_purchase_date", "add_unit",
+    "add_related_items", "add_tags", "add_features", "add_description",
+)
+
+
+def _reset_add_form():
+    for k in ADD_FORM_KEYS:
+        st.session_state.pop(k, None)
+
 
 def render(conn, container_options):
     # 照片暂存区（表单外）：先选文件 → 「添加图片」加入暂存并预览 → 保存时一并生效
     staged = st.session_state.setdefault('add_staged_photos', [])
 
-    with st.form("add_item", clear_on_submit=True):
+    with st.form("add_item", clear_on_submit=False):
         st.subheader(i18n.t("add.title"))
         # 逐行两列而非左右两个大列：每行行高取左右控件较大者，行起点严格对齐。
         # 之前左右两大列内控件独立堆叠，勾选框（无上方 label，比输入框矮）之后的
@@ -33,17 +46,21 @@ def render(conn, container_options):
         c1, c2 = st.columns(2)
         with c1:
             item_no = st.text_input(i18n.t("add.item_no"), key="draft_item_no")
+            # 编号占用提示：表单内控件仅在提交时回传，故提交后即在编号框下方标红，
+            # 比底部报错更直观（避免“录入半天提交才知重复”且数据已丢失的体验）
+            if item_no and repo.item_no_exists(conn, item_no):
+                st.error(i18n.t("add.item_no_exists", item_no=item_no))
         with c2:
-            platform = st.text_input(i18n.t("form.platform"))
+            platform = st.text_input(i18n.t("form.platform"), key="add_platform")
         c1, c2 = st.columns(2)
         with c1:
             name = st.text_input(i18n.t("form.name"), key="add_name")
         with c2:
-            order_no = st.text_input(i18n.t("form.order_no"))
+            order_no = st.text_input(i18n.t("form.order_no"), key="add_order_no")
         c1, c2 = st.columns(2)
         with c1:
             cont_opts = [i18n.t("add.select_container")] + list(container_options.keys())
-            container_name = st.selectbox(i18n.t("form.container"), cont_opts)
+            container_name = st.selectbox(i18n.t("form.container"), cont_opts, key="add_container_name")
         with c2:
             price = st.number_input(i18n.t("form.price"), min_value=0.0, format="%.2f", step=0.1, key="add_price")
         c1, c2 = st.columns(2)
@@ -57,23 +74,23 @@ def render(conn, container_options):
             # 默认勾选=无购买日期（存空）；取消勾选即可填日期。注意不能把 date_input
             # disabled 绑定到勾选框——form 内控件变化不触发 rerun，禁用状态不会刷新，
             # 会出现“勾了没反应/取消了仍不可填”。日期框始终保持可用。
-            no_date = st.checkbox(i18n.t("common.no_date"), value=True,
+            no_date = st.checkbox(i18n.t("common.no_date"), value=True, key="add_no_date",
                                   help=i18n.t("common.no_date_help"))
         with c2:
             quantity = st.number_input(i18n.t("form.quantity"), min_value=1, step=1, value=1, key="add_quantity")
         c1, c2 = st.columns(2)
         with c1:
-            purchase_date = st.date_input(i18n.t("form.purchase_date"))
+            purchase_date = st.date_input(i18n.t("form.purchase_date"), key="add_purchase_date")
         with c2:
             unit = st.text_input(i18n.t("form.unit"), placeholder=i18n.t("form.unit_ph"), key="add_unit")
         c1, c2 = st.columns(2)
         with c1:
-            related_items = st.text_input(i18n.t("form.related_items"),
+            related_items = st.text_input(i18n.t("form.related_items"), key="add_related_items",
                                           help=i18n.t("form.related_help"))
         with c2:
             tags = st.text_input(i18n.t("form.tags"), key="add_tags")
-        features = st.text_area(i18n.t("form.features"))
-        description = st.text_area(i18n.t("form.description"))
+        features = st.text_area(i18n.t("form.features"), key="add_features")
+        description = st.text_area(i18n.t("form.description"), key="add_description")
 
         col_btn1, col_btn2 = st.columns([1, 4])
         with col_btn1:
@@ -82,8 +99,9 @@ def render(conn, container_options):
             cancel = st.form_submit_button(i18n.t("common.cancel"))
 
         if cancel:
-            # 取消新增：清空照片暂存（避免下次进入残留上次的草稿）并回到物品浏览态
+            # 取消新增：清空照片暂存与表单字段（避免下次进入残留上次的草稿）并回到物品浏览态
             st.session_state.add_staged_photos = []
+            _reset_add_form()
             st.session_state.add_item_mode = False
             st.rerun()
 
@@ -91,7 +109,8 @@ def render(conn, container_options):
             if not item_no or not name:
                 st.error(i18n.t("form.required_msg"))
             elif repo.item_no_exists(conn, item_no):
-                st.error(i18n.t("add.item_no_exists", item_no=item_no))
+                # 编号重复的提示已显示在编号框下方（inline），此处仅拦截保存，避免重复报错
+                pass
             else:
                 try:
                     # 暂存照片随保存一并落库（repo.add_item → attach_item_images 内容去重）
@@ -101,8 +120,9 @@ def render(conn, container_options):
                                             platform, order_no, price, features, description,
                                             tags, list(staged), repo.parse_related_text(related_items),
                                             quantity=quantity, unit=unit)
-                    # 保存成功：清暂存、退出新增态并直接打开新物品详情
+                    # 保存成功：清暂存与表单字段、退出新增态并直接打开新物品详情
                     st.session_state.add_staged_photos = []
+                    _reset_add_form()
                     st.session_state.detail_item_id = item_id
                     st.session_state.add_item_mode = False
                     st.toast(i18n.t("add.saved", item_no=item_no), icon="🎉")
