@@ -397,20 +397,22 @@ def find_orphan_images(conn):
 
 
 # 上传图片扩展名白名单 + 各格式文件头魔数（落盘前校验真实类型，防伪装/损坏文件入库）
-ALLOWED_IMAGE_EXTS = ('jpg', 'jpeg', 'png', 'gif', 'webp')
+ALLOWED_IMAGE_EXTS = ('jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic')
 
 
 def _validate_image_bytes(data, ext):
     """按扩展名校验文件头魔数；不匹配抛 ValueError（由 UI 层捕获展示）。"""
-    header = data[:12]
-    if ext in ('jpg', 'jpeg'):
-        ok = header.startswith(b'\xff\xd8\xff')
-    elif ext == 'png':
-        ok = header.startswith(b'\x89PNG\r\n\x1a\n')
-    elif ext == 'gif':
-        ok = header.startswith((b'GIF87a', b'GIF89a'))
-    else:  # webp
-        ok = header.startswith(b'RIFF') and header[8:12] == b'WEBP'
+    head = data[:32]
+    ok = {
+        'jpg': head.startswith(b'\xff\xd8\xff'),
+        'jpeg': head.startswith(b'\xff\xd8\xff'),
+        'png': head.startswith(b'\x89PNG\r\n\x1a\n'),
+        'gif': head.startswith((b'GIF87a', b'GIF89a')),
+        'webp': head.startswith(b'RIFF') and head[8:12] == b'WEBP',
+        # AVIF/HEIC 均为 ISO-BMFF：4 字节长度后紧跟 'ftyp' 盒，品牌在字节 8~11
+        'avif': b'ftypavif' in head,
+        'heic': b'ftypheic' in head or b'ftypmif1' in head or b'ftyphevc' in head,
+    }.get(ext, False)
     if not ok:
         raise ValueError(f"文件内容与扩展名 .{ext} 不符，已拒绝保存（疑似伪装/损坏文件）")
 
