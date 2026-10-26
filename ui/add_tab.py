@@ -16,6 +16,7 @@ import streamlit as st
 import db
 import repo
 import i18n
+from imgutil import safe_image
 
 # 新增表单所有控件的 key 清单：因表单改为 clear_on_submit=False（校验失败时
 # 保留用户已录入数据，避免“编号重复”等报错后全丢失），成功/取消时由代码统一清空。
@@ -137,7 +138,7 @@ def render(conn, container_options):
     col_up, col_btn = st.columns([3, 1])
     with col_up:
         new_files = st.file_uploader(i18n.t("add.upload_images"),
-                                     type=['jpg', 'jpeg', 'png', 'gif', 'webp'],
+                                     type=['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic'],
                                      accept_multiple_files=True, key="add_uploaded_files")
         st.caption(i18n.t("items.photo_hint_draft"))
     with col_btn:
@@ -164,7 +165,7 @@ def render(conn, container_options):
         for idx, f in enumerate(staged):
             col_img, col_mv_up, col_mv_down, col_del = st.columns([3, 1, 1, 1])
             with col_img:
-                st.image(f, width=120)
+                safe_image(f, width=120)
             with col_mv_up:
                 if idx > 0:
                     if st.button(i18n.t("items.img_up"), key=f"staged_up_{idx}",

@@ -14,6 +14,7 @@ import db
 import repo
 import i18n
 from ui import add_tab
+from imgutil import safe_image
 
 try:
     from streamlit.runtime import get_instance as _st_get_instance
@@ -38,8 +39,11 @@ def _media_original_url(abs_path, tag):
         return None
     try:
         mgr = _st_get_instance().media_file_mgr
+        ext = os.path.splitext(abs_path)[1].lower().lstrip('.')
         mime, _ = mimetypes.guess_type(abs_path)
-        return mgr.add(abs_path, mime or "image/jpeg", tag)
+        # avif/heic 在部分 Python/浏览器 mimetypes 缺失，显式兜底确保原图以正确 MIME 输出
+        mime = mime or {'avif': 'image/avif', 'heic': 'image/heic'}.get(ext, 'image/jpeg')
+        return mgr.add(abs_path, mime, tag)
     except Exception as e:
         db.logger.warning("取原图 URL 失败: %r", e, exc_info=True)
         return None
@@ -232,7 +236,7 @@ def render_edit_mode(conn, item_data, container_options):
     col_up, col_btn = st.columns([3, 1])
     with col_up:
         new_files = st.file_uploader(i18n.t("add.upload_images"),
-                                     type=['jpg', 'jpeg', 'png', 'gif', 'webp'],
+                                     type=['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic'],
                                      accept_multiple_files=True, key="edit_uploaded_files")
         st.caption(i18n.t("items.photo_hint"))
     with col_btn:
@@ -264,7 +268,7 @@ def render_edit_mode(conn, item_data, container_options):
             col_img, col_up, col_down, col_del = st.columns([3, 1, 1, 1])
             with col_img:
                 if os.path.exists(abs_path):
-                    st.image(abs_path, width=120)
+                    safe_image(abs_path, width=120)
                 else:
                     st.caption(i18n.t("items.image_missing"))
             with col_up:
@@ -342,7 +346,7 @@ def render_detail_page(conn, item, container_options):
                     + "".join(gallery) + "</div>",
                     unsafe_allow_html=True)
         for path in fallback:
-            st.image(path, use_container_width=True)
+            safe_image(path, use_container_width=True)
         # 共用物品提示（集中列于图区下方，按图顺序编号保持归属）
         for idx, (img_id, _path, _order) in enumerate(img_rows):
             shared = peers.get(img_id)
@@ -547,7 +551,7 @@ def render_card_view(conn, df_all, total_items):
                             f'margin:0 auto;border-radius:8px">',
                             unsafe_allow_html=True)
                     else:
-                        st.image(img, use_container_width=True)
+                        safe_image(img, use_container_width=True)
                 else:
                     # 无图卡片渲染本地占位块，不请求外链 placeholder（离线/墙内破图）
                     st.markdown(_no_image_markdown(i18n.t("common.no_images")),
