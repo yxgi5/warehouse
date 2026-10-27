@@ -270,6 +270,11 @@ TRANSLATIONS = {
         "tree.view_detail": "详情",
         "tree.goto_detail": "已打开「{name}」详情页",
         "tree.empty": "暂无容器，去「容器管理」创建一个吧",
+        "tree.search": "🔍 搜索容器 / 位置",
+        "tree.expand_all": "⬇️ 全部展开",
+        "tree.collapse_all": "⬆️ 全部收起",
+        "tree.hit_count": "命中 {n} 个容器",
+        "tree.no_match": "无匹配容器",
     },
 
     "en": {
@@ -523,6 +528,11 @@ TRANSLATIONS = {
         "tree.view_detail": "Detail",
         "tree.goto_detail": "Opened \"{name}\" details",
         "tree.empty": "No containers yet, create one in the Containers tab",
+        "tree.search": "🔍 Search container / location",
+        "tree.expand_all": "⬇️ Expand all",
+        "tree.collapse_all": "⬆️ Collapse all",
+        "tree.hit_count": "Matched {n} containers",
+        "tree.no_match": "No matching container",
     },
 }
 
