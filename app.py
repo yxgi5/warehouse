@@ -467,9 +467,30 @@ with st.container(key="fs_exit"):
         st.session_state.list_fullscreen = False
         st.rerun()
 
+# 跨 Tab 跳转（容器详情「Open Details」→ 物品详情页在「物品浏览」Tab）：
+# st.tabs 1.40 无 key/on_change，用 JS 模拟点击目标 Tab 按钮（Phase 7 前同款
+# goto_tab 机制的按需恢复）。一次性标记：读到即清除，避免后续 rerun 反复跳。
+_jump = st.session_state.pop("jump_to_tab", None)
+if _jump is not None:
+    components.html(f"""
+<script>
+(function() {{
+    function jump() {{
+        try {{
+            var doc = window.parent.document;
+            var tabs = doc.querySelectorAll('[data-baseweb="tab-list"] button');
+            if (tabs && tabs.length > {int(_jump)}) tabs[{int(_jump)}].click();
+        }} catch (e) {{}}
+    }}
+    [0, 60, 200, 500].forEach(function(t) {{ setTimeout(jump, t); }});
+}})();
+</script>
+""", height=0)
+
 # --- 定义Tabs ---
 # 注：Streamlit 1.40 的 st.tabs 不支持 key/on_change（1.55 才引入）。
-# 树 Tab 内跨页跳转通过"就地渲染详情页"实现（见 tree_tab.py）。
+# 树 Tab 内跨页跳转通过"就地渲染详情页"实现（见 tree_tab.py）；
+# 容器详情「Open Details」→ 物品详情为真正的跨 Tab 跳转，用下方 jump_to_tab 机制。
 # Phase 7：「新增物品」不再是独立 Tab，而是「物品浏览」Tab 内的子页面
 # （入口按钮在物品 Tab 浏览态顶部），因此原有的 goto_tab 跨 Tab 跳转机制
 # （JS 模拟点击 Tab 按钮）随之移除——新增保存后直接在本 Tab 打开详情。

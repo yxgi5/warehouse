@@ -561,6 +561,33 @@ def main():
     assert any(top_names[0] in v for v in tree_labels_after), "返回后容器树未重新渲染"
     print("✅ 容器树详情页返回按钮 → 回到树视图")
 
+    # 树内容器详情「Open Details」→ 打开物品详情（Items Tab），而非清回树页
+    # 回归背景：按钮只设 detail_item_id 并清 tree_detail_id，物品详情开在 Items Tab，
+    # 用户却停留在树 Tab 看到清回的树页。修复后另设 jump_to_tab=0 由 app.py JS 切 Tab
+    # （AppTest 不执行前端 JS，这里验证 session 状态链路；树/容器管理两处共用该函数）
+    conn_o = sqlite3.connect("warehouse.db")
+    row_o = conn_o.execute(
+        "SELECT container_id, id FROM items WHERE container_id IS NOT NULL ORDER BY id LIMIT 1").fetchone()
+    conn_o.close()
+    assert row_o, "库中无带物品的容器，无法验证 Open Details"
+    c_with_items, item_in_c = row_o
+    at.session_state["tree_detail_id"] = c_with_items
+    at.run()
+    assert len(at.exception) == 0, at.exception
+    open_btn = find_button(at.tabs[4], label_contains="Open Details")
+    assert open_btn is not None, "容器详情缺 Open Details 按钮"
+    open_btn.click()
+    at.run()
+    assert len(at.exception) == 0, at.exception
+    assert at.session_state["detail_item_id"] == item_in_c, "Open Details 未打开目标物品详情"
+    assert "tree_detail_id" not in at.session_state or at.session_state["tree_detail_id"] is None, \
+        "跳转后应退出树内容器详情"
+    # Items Tab（tabs[0]）应渲染出物品详情子页面（无浏览态控制行 radio）
+    assert len(at.tabs[0].radio) == 0, "物品详情未在 Items Tab 渲染（浏览态 radio 不应出现）"
+    at.session_state["detail_item_id"] = None
+    at.run()
+    print("✅ 树内容器详情 Open Details → 打开物品详情并退出容器详情（jump_to_tab 切 Tab）")
+
     # 恢复浏览状态
     at.session_state["container_detail_id"] = None
     at.session_state["container_view_mode"] = "list"
