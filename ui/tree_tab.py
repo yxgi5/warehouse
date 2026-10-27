@@ -12,6 +12,8 @@
 - 搜索框：按容器名 / 位置匹配；命中节点的所有祖先自动展开、命中行以 🔍 前缀高亮，
   一眼看到全部匹配（浏览器 Ctrl+F 拦不到、且找不到未渲染节点，故用页面内搜索）。
 - 顶部「全部展开 / 全部收起」快捷按钮，偶尔总览全库一键铺开。
+- 行尾括号徽标格式为 `(子容器数/本容器item数)`：左为直接子容器个数、右为本容器直属物品数，
+  一眼判断该节点下是否还有子树、以及本容器内直接放了几件，决定要不要展开。
 - 注意：SQLite parent_id NULL 读入 pandas 后是 NaN，顶层容器必须用 isna() 匹配。
 """
 import streamlit as st
@@ -118,10 +120,11 @@ def render(conn, search, tag_filter):
         arrow = "▾ " if is_open else ("▸ " if has_children else "· ")
         indent = " " * depth  # 全角空格，等比缩进
         nm = name_of[cid]
-        cnt = item_counts.get(cid, 0)
+        item_cnt = item_counts.get(cid, 0)        # 本容器直属物品数
+        child_cnt = len(children_map.get(cid, []))  # 直接子容器数
         loc = loc_of.get(cid, "")
         hit = "🔍 " if cid in matched else ""
-        label = (f"{hit}{indent}{arrow}{icon} {nm}  ({cnt})"
+        label = (f"{hit}{indent}{arrow}{icon} {nm}  ({child_cnt}/{item_cnt})"
                  + (f"  📍 {loc}" if loc else ""))
         c1, c2 = st.columns([6, 1])
         with c1:
