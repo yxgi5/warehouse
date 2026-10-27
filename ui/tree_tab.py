@@ -4,7 +4,8 @@
 设计要点（Phase 8 折叠化改造）：
 - 默认只渲染第一级（顶层容器），点击节点才展开其直接子容器：长树不再一屏到底，
   没有 Home 键的键盘免去疯狂滚动。
-- 图标：顶层 = 💽（硬盘），下级 = 📁（合上）/ 📂（展开），层级一眼可辨。
+- 图标：名称以 "C" 开头（如 C: 盘）= 💽 硬盘；其余 = 📁（合上）/ 📂（展开）文件夹，层级一眼可辨。
+  注意：图标按**名称前缀**判定，而非按层级——非 C 开头的顶级容器仍显示文件夹图标。
 - 行主体（图标+名称区域）点击 = 展开/收起；行尾「详情」按钮保留，就地打开详情页
   （复用 containers_tab.render_detail_readonly，与容器管理 Tab 一致；返回回到树）。
 - 展开状态存 session_state（tree_expanded 集合）：切换 Tab / 做其他操作回来保持，
@@ -113,8 +114,8 @@ def render(conn, search, tag_filter):
         kids = children_map.get(cid, [])
         has_children = bool(kids)
         is_open = cid in expanded
-        # 图标：顶层硬盘，下级文件夹（展开/合上两态）
-        if depth == 0:
+        # 图标按名称前缀：以 "C" 开头视为硬盘（如 C: 盘），其余为文件夹（展开/合上两态）
+        if name_of[cid].lower().startswith("c"):
             icon = "💽"
         else:
             icon = "📂" if is_open else "📁"
