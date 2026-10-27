@@ -443,10 +443,22 @@ search, tag_filter = sidebar.render(conn)
 st.title(i18n.t("app.main_title"))
 
 # Step 3 全屏态透传：把 session_state 写进 :root 变量（前端 CSS/JS 据此切换全屏）。
-# 与 css_inject 同款隐藏容器，避免该 markdown 元素容器占顶部空白。
+# 全屏仅在「列表浏览态」生效：编辑/详情/新增等子页面渲染时临时退出全屏——
+# 否则 body.wh-list-fullscreen 会把 stMain overflow:hidden（编辑页无法下滚）、
+# 且右上角残留「退出最大化」按钮。注意只临时失效、不清除 list_fullscreen 开关：
+# 保存/取消/Back 回到列表后自动恢复之前「如果原来是最大化就还是最大化」的状态。
+_fs_subpage = (
+    st.session_state.get("add_item_mode", False)
+    or st.session_state.get("edit_item_id") is not None
+    or st.session_state.get("detail_item_id") is not None
+    or st.session_state.get("add_container_mode", False)
+    or st.session_state.get("edit_container_id") is not None
+    or st.session_state.get("container_detail_id") is not None
+)
+_fs_active = st.session_state.list_fullscreen and not _fs_subpage
 with st.container(key="fs_state"):
     st.markdown(
-        f"<style>:root{{--list-fullscreen:{'1' if st.session_state.list_fullscreen else '0'}}}</style>",
+        f"<style>:root{{--list-fullscreen:{'1' if _fs_active else '0'}}}</style>",
         unsafe_allow_html=True)
 
 # 全屏态浮动退出按钮（常驻 DOM，仅全屏可见；ESC 也触发它，见下方同步 JS）

@@ -232,6 +232,16 @@ def main():
     at.run()
     assert len(at.exception) == 0, at.exception
 
+    # ---- 4-fs. 最大化列表 → 编辑页：应临时退出全屏且开关保留（返回自动恢复）----
+    # 回归背景：全屏 CSS(body.wh-list-fullscreen) 会把 stMain overflow:hidden，
+    # 子页面沿用全屏态会导致编辑/详情页无法下滚、右上角残留「退出最大化」按钮。
+    def fs_var_text(at_):
+        return "\n".join(str(getattr(m, "value", "")) for m in at_.markdown)
+
+    at.session_state["list_fullscreen"] = True   # 模拟用户在最大化列表中操作
+    at.run()
+    assert len(at.exception) == 0, at.exception
+
     # ---- 4. 详情页点"✏️ 编辑" → 编辑页渲染 ----
     btn = find_button(at, label_exact="✏️ 编辑")
     assert btn is not None, "详情页无编辑按钮"
@@ -242,6 +252,9 @@ def main():
     assert any("E2E_ITEM_001" in v for v in edit_texts), "编辑表单未带出编号"
     assert len(at.tabs[0].radio) == 0, "编辑页不应出现列表/卡片切换 radio"
     assert len(at.tabs[5].radio) >= 1, "编辑页下 Containers 页空白（st.stop 截断了脚本）"
+    # 全屏临时退出：编辑子页面注入变量 0（可滚动、退出按钮随 body class 隐藏），开关保留
+    assert "--list-fullscreen:0" in fs_var_text(at), "编辑页应临时退出全屏（--list-fullscreen:0）"
+    assert at.session_state["list_fullscreen"] is True, "编辑页不得清除最大化开关（返回列表需恢复）"
     print("✅ 编辑页渲染 0 异常，编号已带出，其它 Tab 同轮正常渲染")
 
     # ---- 4a-2. 编辑态图片即时添加入口（Phase 8）：上传框+按钮在表单外，
@@ -279,6 +292,11 @@ def main():
                          (item_id,)).fetchone()
     assert meta2 == (e2e_cont_id, "2024-01-15"), f"编辑保存后容器/日期应保持: {meta2}"
     print("✅ 编辑保存保持容器与日期")
+    # 保存退出编辑态 → 回到列表浏览态，全屏自动恢复；随后还原开关避免影响后续分节
+    assert "--list-fullscreen:1" in fs_var_text(at), "返回列表应自动恢复最大化（--list-fullscreen:1）"
+    at.session_state["list_fullscreen"] = False
+    at.run()
+    print("✅ 全屏仅在列表浏览态生效：编辑/详情临时退出，返回列表自动恢复")
 
     # ---- 4c. 详情页关联区与图下共用提示的跳转闭环 ----
     # E2E_ITEM_001（无图）详情：关联区列出两件，点按钮切到对方详情
