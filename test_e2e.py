@@ -492,12 +492,28 @@ def main():
         "SELECT name FROM containers WHERE parent_id IS NULL ORDER BY id LIMIT 3")]
     conn2.close()
     assert top_names, "库中无顶层容器"
-    tree_md = [str(getattr(m, "value", "")) for m in at.tabs[4].markdown]
-    tree_text = "\n".join(tree_md)
+    tree_labels = [str(getattr(b, "label", "")) for b in at.tabs[4].button]
+    tree_text = "\n".join(tree_labels)
     for top_name in top_names:
         assert top_name in tree_text, f"容器树未渲染顶层容器「{top_name}」: {tree_text[:200]}"
     assert "ITEM_" not in tree_text, "容器树不应平铺具体物品行"
-    print(f"✅ 容器树渲染顶层容器（{', '.join(top_names)}）且不平铺物品（isna 修复防回归）")
+    print(f"✅ 容器树仅渲染顶层容器（{', '.join(top_names)}）且不平铺物品（isna 修复防回归）")
+
+    # 默认折叠：有父级的二级容器默认不显示，需展开/搜索才可见
+    conn2_sub = sqlite3.connect("warehouse.db")
+    sub_name = conn2_sub.execute(
+        "SELECT name FROM containers WHERE parent_id IS NOT NULL ORDER BY id LIMIT 1").fetchone()[0]
+    conn2_sub.close()
+    assert sub_name not in tree_text, f"默认应折叠，二级容器「{sub_name}」不应出现: {tree_text[:200]}"
+    # 搜索自动展开祖先链：输入二级容器名 → 命中行及其祖先可见
+    at.text_input(key="tree_search").set_value(sub_name)
+    at.run()
+    tree_labels2 = [str(getattr(b, "label", "")) for b in at.tabs[4].button]
+    assert sub_name in "\n".join(tree_labels2), f"搜索后二级容器「{sub_name}」应自动展开可见"
+    print(f"✅ 搜索「{sub_name}」自动展开祖先链并高亮命中节点")
+    # 清空搜索恢复折叠态
+    at.text_input(key="tree_search").set_value("")
+    at.run()
 
     # 行尾「Detail」按钮 → 树 Tab 内就地打开容器详情页（1.40 无 tabs key，不做跨 Tab 跳转）
     tree_btn = find_button(at.tabs[4], label_contains="Detail")
@@ -523,8 +539,8 @@ def main():
     assert len(at.exception) == 0, at.exception
     assert "tree_detail_id" not in at.session_state or at.session_state["tree_detail_id"] is None, \
         "返回后 tree_detail_id 未清除"
-    tree_md_after = [str(getattr(m, "value", "")) for m in at.tabs[4].markdown]
-    assert any(top_names[0] in v for v in tree_md_after), "返回后容器树未重新渲染"
+    tree_labels_after = [str(getattr(b, "label", "")) for b in at.tabs[4].button]
+    assert any(top_names[0] in v for v in tree_labels_after), "返回后容器树未重新渲染"
     print("✅ 容器树详情页返回按钮 → 回到树视图")
 
     # 恢复浏览状态

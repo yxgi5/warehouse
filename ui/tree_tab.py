@@ -1,57 +1,43 @@
 # -*- coding: utf-8 -*-
 """Tab5 容器树：纯容器层级树，体现容器间的父子相对关系。
 
-设计要点：
-- 每行 = 字符画层级连接线（├─ └─ │）+ 图标 + 容器名 + 物品数徽标 + 位置；
-  连接线与等宽字体前缀保证层级一眼可辨，图标/徽标/hover 负责提升美观。
-- 行尾「详情」按钮在树 Tab 内就地打开该容器的详情页
-  （复用 containers_tab.render_detail_readonly，与容器管理 Tab 详情一致；
-  返回按钮回到树）。注：Streamlit 1.40 的 st.tabs 不支持 key/on_change，
-  无法程序化切换 Tab，故采用就地展开而非跨 Tab 跳转。
-- 注意：SQLite parent_id NULL 读入 pandas 后是 NaN，顶层容器必须用
-  isna() 匹配（`== None` 恒 False 会导致整树空白）。
+设计要点（Phase 8 折叠化改造）：
+- 默认只渲染第一级（顶层容器），点击节点才展开其直接子容器：长树不再一屏到底，
+  没有 Home 键的键盘免去疯狂滚动。
+- 图标：顶层 = 💽（硬盘），下级 = 📁（合上）/ 📂（展开），层级一眼可辨。
+- 行主体（图标+名称区域）点击 = 展开/收起；行尾「详情」按钮保留，就地打开详情页
+  （复用 containers_tab.render_detail_readonly，与容器管理 Tab 一致；返回回到树）。
+- 展开状态存 session_state（tree_expanded 集合）：切换 Tab / 做其他操作回来保持，
+  刷新浏览器重置为全收起（无残留、无持久化副作用）。
+- 搜索框：按容器名 / 位置匹配；命中节点的所有祖先自动展开、命中行以 🔍 前缀高亮，
+  一眼看到全部匹配（浏览器 Ctrl+F 拦不到、且找不到未渲染节点，故用页面内搜索）。
+- 顶部「全部展开 / 全部收起」快捷按钮，偶尔总览全库一键铺开。
+- 注意：SQLite parent_id NULL 读入 pandas 后是 NaN，顶层容器必须用 isna() 匹配。
 """
-import html
 import streamlit as st
+import pandas as pd
 import repo
 import i18n
 from ui.containers_tab import render_detail_readonly
 
-# 树行样式：字符画连接线保留层级直观性，图标/徽标/hover 提升美观，
-# CSS 变量跟随 Streamlit 主题（浅/深色自适应）。
-_TREE_CSS = """
-<style>
-.tree-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 2px 6px;
-    border-radius: 4px;
-    transition: background-color 0.15s;
-}
-.tree-row:hover { background: rgba(128, 128, 128, 0.08); }
-.tree-line {
-    font-family: monospace;
-    white-space: pre;
-    color: rgba(128, 128, 128, 0.55);
-    font-size: 1rem;
-    line-height: 1;
-    user-select: none;
-}
-.tree-icon { font-size: 1.05rem; line-height: 1; }
-.tree-name { font-weight: 500; }
-.tree-badge {
-    background: color-mix(in srgb, var(--primary-color) 14%, transparent);
-    color: var(--primary-color);
-    border-radius: 10px;
-    padding: 0 8px;
-    font-size: 0.8rem;
-    line-height: 1.4;
-    font-weight: 500;
-}
-.tree-loc { color: var(--text-color); opacity: 0.55; font-size: 0.85rem; }
-</style>
-"""
+# 展开状态集合（session 内记忆）：存已展开容器的 id
+_EXPAND_KEY = "tree_expanded"
+
+
+def _toggle(cid):
+    s = st.session_state.setdefault(_EXPAND_KEY, set())
+    if cid in s:
+        s.discard(cid)
+    else:
+        s.add(cid)
+
+
+def _expand_all(cids):
+    st.session_state[_EXPAND_KEY] = set(cids)
+
+
+def _collapse_all():
+    st.session_state[_EXPAND_KEY] = set()
 
 
 def render(conn, search, tag_filter):
@@ -74,58 +60,86 @@ def render(conn, search, tag_filter):
         return
 
     st.subheader(i18n.t("app.tab.tree"))
-    st.markdown(_TREE_CSS, unsafe_allow_html=True)
 
     # 直接物品数统计（配合侧边栏筛选；空 df 时 groupby 会崩，需兜底）
     df_all = repo.get_filtered_data(conn, search, tag_filter)
-    if df_all.empty:
-        item_counts = {}
-    else:
-        item_counts = df_all.groupby("container_id").size().to_dict()
+    item_counts = (df_all.groupby("container_id").size().to_dict()
+                   if not df_all.empty else {})
+
+    # ===== 构建层级索引 =====
+    rows = containers_df.sort_values("id")
+    parent_of = {int(r["id"]): (int(r["parent_id"]) if pd.notna(r["parent_id"]) else None)
+                 for _, r in rows.iterrows()}
+    children_map = {}
+    name_of, loc_of = {}, {}
+    for _, r in rows.iterrows():
+        cid = int(r["id"])
+        pid = int(r["parent_id"]) if pd.notna(r["parent_id"]) else None
+        children_map.setdefault(pid, []).append(cid)
+        name_of[cid] = str(r["name"])
+        loc_of[cid] = str(r.get("location") or "")
 
     st.caption(i18n.t("tree.summary", containers=len(containers_df), items=len(df_all)))
 
-    def render_tree(parent_id=None, prefix=""):
-        if parent_id is None:
-            children = containers_df[containers_df["parent_id"].isna()]
+    # ===== 搜索 + 全部展开/收起 =====
+    q = (st.text_input(i18n.t("tree.search"), key="tree_search") or "").strip().lower()
+    ctl1, ctl2, ctl3 = st.columns([4, 1, 1])
+    with ctl2:
+        st.button(i18n.t("tree.expand_all"), on_click=_expand_all,
+                  args=(list(name_of.keys()),), use_container_width=True)
+    with ctl3:
+        st.button(i18n.t("tree.collapse_all"), on_click=_collapse_all,
+                  use_container_width=True)
+
+    expanded = set(st.session_state.get(_EXPAND_KEY, set()))
+    matched = set()
+    if q:
+        for cid, nm in name_of.items():
+            if q in nm.lower() or q in loc_of.get(cid, "").lower():
+                matched.add(cid)
+        # 命中节点的所有祖先自动展开，确保命中行可见
+        for cid in matched:
+            p = parent_of.get(cid)
+            while p is not None:
+                expanded.add(p)
+                p = parent_of.get(p)
+        if matched:
+            st.caption(i18n.t("tree.hit_count", n=len(matched)))
         else:
-            children = containers_df[containers_df["parent_id"] == parent_id]
-        rows = children.sort_values("id")
-        n = len(rows)
-        for i, (_, row) in enumerate(rows.iterrows()):
-            is_last = (i == n - 1)
-            branch = ""
-            if parent_id is not None:
-                branch = "└─ " if is_last else "├─ "
-            cid = int(row["id"])
-            count = item_counts.get(cid, 0)
-            name = html.escape(str(row["name"]))
-            location = html.escape(str(row.get("location") or ""))
-            # 图标统一 📦：容器实体在各处一致（详情标题/卡片占位/树行），
-            # 不再按是否有子容器区分 🗂️/📦 两态
-            icon = "📦"
-            loc_html = f'<span class="tree-loc">📍 {location}</span>' if location else ""
+            st.caption(i18n.t("tree.no_match"))
 
-            line = f'{prefix}{branch}'
-            row_html = (
-                f'<div class="tree-row">'
-                f'<span class="tree-line">{line}</span>'
-                f'<span class="tree-icon">{icon}</span>'
-                f'<span class="tree-name">{name}</span>'
-                f'<span class="tree-badge">{count}</span>'
-                f'{loc_html}'
-                f'</div>'
-            )
-            col1, col2 = st.columns([6, 1])
-            with col1:
-                st.markdown(row_html, unsafe_allow_html=True)
-            with col2:
-                if st.button(i18n.t("tree.view_detail"), key=f"tree_btn_{cid}",
-                             use_container_width=True):
-                    st.session_state.tree_detail_id = cid   # 树 Tab 内就地打开详情页
-                    st.toast(i18n.t("tree.goto_detail", name=row["name"]))
-                    st.rerun()
-            child_prefix = prefix + ("   " if is_last else "│  ")
-            render_tree(cid, child_prefix)
+    # ===== 递归渲染（仅在 expanded 内向下展开）=====
+    def render_node(cid, depth):
+        kids = children_map.get(cid, [])
+        has_children = bool(kids)
+        is_open = cid in expanded
+        # 图标：顶层硬盘，下级文件夹（展开/合上两态）
+        if depth == 0:
+            icon = "💽"
+        else:
+            icon = "📂" if is_open else "📁"
+        arrow = "▾ " if is_open else ("▸ " if has_children else "· ")
+        indent = " " * depth  # 全角空格，等比缩进
+        nm = name_of[cid]
+        cnt = item_counts.get(cid, 0)
+        loc = loc_of.get(cid, "")
+        hit = "🔍 " if cid in matched else ""
+        label = (f"{hit}{indent}{arrow}{icon} {nm}  ({cnt})"
+                 + (f"  📍 {loc}" if loc else ""))
+        c1, c2 = st.columns([6, 1])
+        with c1:
+            # 行主体点击 = 展开/收起
+            st.button(label, key=f"tree_toggle_{cid}", on_click=_toggle,
+                      args=(cid,), use_container_width=True)
+        with c2:
+            if st.button(i18n.t("tree.view_detail"), key=f"tree_btn_{cid}",
+                         use_container_width=True):
+                st.session_state.tree_detail_id = cid   # 树 Tab 内就地打开详情页
+                st.toast(i18n.t("tree.goto_detail", name=nm))
+                st.rerun()
+        if is_open:
+            for ch in kids:
+                render_node(ch, depth + 1)
 
-    render_tree()
+    for top in children_map.get(None, []):
+        render_node(top, 0)
