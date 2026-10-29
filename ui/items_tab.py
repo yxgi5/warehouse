@@ -45,9 +45,11 @@ def _restore_nav_origin():
             st.session_state.restore_list_scroll = True
     elif src == "container":
         st.session_state.container_detail_id = orig.get("container_detail_id")
+        st.session_state.scroll_to_container_item = orig.get("item_id")
         st.session_state.jump_to_tab = 5   # 容器管理 Tab 索引
     elif src == "tree":
         st.session_state.tree_detail_id = orig.get("tree_detail_id")
+        st.session_state.scroll_to_container_item = orig.get("item_id")
         st.session_state.jump_to_tab = 4   # 容器树 Tab 索引
 
 
@@ -448,8 +450,8 @@ def render_list_view(conn, df_all, total_items, container_options):
         lambda x: f"¥{x:.2f}" if pd.notna(x) and x else "")
     df_display['subtotal'] = df_display['subtotal'].apply(lambda x: f"¥{x:.2f}" if x else "")
 
-    # --- 表格（Step 2：包一层带 key 容器供 CSS/JS 定位，高度自适应视口；
-    # height=300 仅作无 JS 时的兜底）---
+    # --- 表格（Step 2：包一层带 key 容器供 CSS/JS 定位）---
+    # 不限制 height：表格随内容撑高、整页滚动，便于"返回原位置"（window.scrollY 还原）。
     # 表格先渲染，下方工具栏直接读 event.selection.rows 即本轮最新选中，
     # 不存在"选中结果滞后一帧"的问题；同时写回 session_state 供批量删除后清空。
     with st.container(key="item_list_wrap"):
@@ -459,7 +461,6 @@ def render_list_view(conn, df_all, total_items, container_options):
             selection_mode="multi-row",
             on_select="rerun",
             use_container_width=True,
-            height=300,
             hide_index=True,
             column_config={
                 "id": None,
@@ -545,27 +546,21 @@ def render_list_view(conn, df_all, total_items, container_options):
         with col_tool5:
             st.caption(i18n.t("items.list_count", total=total_items, n=selected_count))
 
-    # 列表网格滚动位置还原（A1 位置还原）：滚动时把 dataframe 内部 scrollTop 存
-    # localStorage；返回列表（restore_list_scroll 标记）时读回并设到网格滚动容器。
-    # 用 scrollHeight-clientHeight 启发式定位真正滚动的元素，避免依赖具体 class。
+    # 列表滚动位置还原（A1 位置还原）：表格已改为整页滚动，故捕获/还原 window.scrollY
+    # （dataframe 虚拟网格的内部 scrollTop 无法通过 JS 稳定抓取，已废弃该方案）。
+    # 滚动时把 window.scrollY 存 localStorage；返回列表（restore_list_scroll 标记）时读回。
     _restore = bool(st.session_state.get("restore_list_scroll", False))
     _js = (
         "<script>(function(){"
-        "function findScroller(root){var best=root,stack=[root],el;"
-        "while((el=stack.pop())){for(var i=0;i<el.children.length;i++)stack.push(el.children[i]);"
-        "if(el.scrollHeight-el.clientHeight>2)best=el;}return best;}"
-        "var KEY='wh_list_scroll';"
-        "var df=document.querySelector('.stDataFrame');"
-        "if(df){var g=findScroller(df);"
-        "g.addEventListener('scroll',function(){try{localStorage.setItem(KEY,g.scrollTop);}catch(e){}},{passive:true});"
+        "var KEY='wh_items_list_scroll';"
+        "window.addEventListener('scroll',function(){try{localStorage.setItem(KEY,window.scrollY);}catch(e){}},{passive:true});"
     )
     if _restore:
         _js += (
             "var y=parseInt(localStorage.getItem(KEY)||'0',10);"
-            "[0,80,200,400].forEach(function(t){setTimeout(function(){"
-            "var gg=findScroller(document.querySelector('.stDataFrame'));if(gg)gg.scrollTop=y;},t);});"
+            "[0,80,200,400,800].forEach(function(t){setTimeout(function(){window.scrollTo(0,y);},t);});"
         )
-    _js += "}})();</script>"
+    _js += "})();</script>"
     st.components.v1.html(_js, height=0)
     if _restore:
         st.session_state.restore_list_scroll = False

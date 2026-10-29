@@ -609,6 +609,10 @@ def main():
     assert at.session_state["detail_item_id"] == item_in_c, "Open Details 未打开目标物品详情"
     assert "tree_detail_id" not in at.session_state or at.session_state["tree_detail_id"] is None, \
         "跳转后应退出树内容器详情"
+    # 来源记录：从树详情点开时 nav_origin 应记 source=tree + 目标 item（供 Back 精确回滚）
+    _no = at.session_state["nav_origin"] if "nav_origin" in at.session_state else None
+    assert _no and _no.get("source") == "tree" and _no.get("item_id") == item_in_c, \
+        "Open Details 未记录 tree 来源与目标 item（精确回出发点依据缺失）"
     # Items Tab（tabs[0]）应渲染出物品详情子页面（无浏览态控制行 radio）
     assert len(at.tabs[0].radio) == 0, "物品详情未在 Items Tab 渲染（浏览态 radio 不应出现）"
     # A1：从树进入详情，Back 应回到「树内容器详情」而非物品列表顶层
@@ -620,8 +624,9 @@ def main():
     _td = at.session_state["tree_detail_id"] if "tree_detail_id" in at.session_state else None
     assert _td == c_with_items, "Back 未回到树内容器详情"
     at.session_state["tree_detail_id"] = None
+    at.session_state["scroll_to_container_item"] = None
     at.run()
-    print("✅ 树内容器详情 Open Details → 物品详情 → Back 回到树内容器详情（A1 返回来源）")
+    print("✅ 树内容器详情 Open Details → 物品详情 → Back 回到树内容器详情并定位到原 item 行（A1+精确回出发点）")
 
     # 恢复浏览状态
     at.session_state["container_detail_id"] = None

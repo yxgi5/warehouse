@@ -412,9 +412,23 @@ def render_detail_readonly(conn, containers_df, cid, exit_key, key_prefix="cd"):
                     st.toast(i18n.t("containers.jump_item_hint"), icon="📄")
                     st.rerun()
             with c2:
+                # 每物品行锚点：从详情点开 item 再返回时 scrollIntoView 精确滚回这行
+                st.markdown(f'<a id="cont-item-{item_id}"></a>', unsafe_allow_html=True)
                 st.write(f"{item_no} - {item_name}")
     else:
         st.caption(i18n.t("common.no_items"))
+
+    # 精确回出发点：从容器/树详情点开 item 再返回时，滚动到原来那件物品的行
+    # （详情页 item 列表是逐行普通 DOM，scrollIntoView 可靠；延迟较长为避开 app.py
+    # 切 Tab 的 JS，确保先切到本 Tab 再滚动，否则在隐藏 Tab 上滚动无效）
+    _ctarget = st.session_state.get("scroll_to_container_item")
+    if _ctarget is not None:
+        st.components.v1.html(
+            f"<script>(function(){{var el=document.getElementById('cont-item-{int(_ctarget)}');"
+            f"if(el){{[200,500,900,1500].forEach(function(t){{setTimeout(function(){{"
+            f"el.scrollIntoView({{block:'center'}});}},t);}});}}}})();</script>",
+            height=0)
+        st.session_state.scroll_to_container_item = None
 
 
 def render_detail_page(conn, containers_df, cid):
