@@ -64,6 +64,8 @@ def confirm_container_delete(conn, ids, names_text):
                 st.session_state.edit_container_id = None
                 st.session_state.add_container_mode = False
                 st.session_state.container_detail_id = None
+                # 兼容从容器树入口打开的详情：清掉树的详情态，否则会重新渲染已删除容器
+                st.session_state.tree_detail_id = None
                 st.rerun()
             except Exception as e:
                 db.logger.exception("删除容器失败")
@@ -434,12 +436,22 @@ def render_detail_readonly(conn, containers_df, cid, exit_key, key_prefix="cd"):
         st.session_state.scroll_to_container_item = None
 
 
-def render_detail_page(conn, containers_df, cid):
-    """容器详情：工具栏（返回/编辑/删除）+ 只读详情 + 照片管理区。"""
+def render_detail_page(conn, containers_df, cid, exit_key="container_detail_id",
+                       return_tab=5, key_prefix="cd", post_back=None):
+    """容器详情：工具栏（返回/编辑/删除）+ 只读详情 + 照片管理区。
+
+    参数化以支持不同入口共用同一视图、保持按钮一致（用户反馈：从容器树打开的
+    容器详情缺 编辑/删除 按钮，与容器管理 Tab 入口不一致）：
+    - exit_key / return_tab：控制返回——清除哪个详情态、跳回哪个 Tab；
+      容器树入口传 exit_key='tree_detail_id'、return_tab=4，使「从树打开的容器详情」
+      也带完整工具栏且返回回到树。
+    - key_prefix：避免不同入口同屏（理论上不会）键冲突。
+    - post_back：返回时额外要设置的 session 键（如树的滚动还原标记 tree_scroll_restore）。
+    """
     row = containers_df[containers_df['id'] == cid]
     if row.empty:
         st.warning(i18n.t("containers.not_found"))
-        st.session_state.container_detail_id = None
+        st.session_state[exit_key] = None
         st.rerun()
         return
     cont = row.iloc[0]
@@ -448,24 +460,26 @@ def render_detail_page(conn, containers_df, cid):
     # 顶部工具栏：返回 / 编辑 / 删除
     col1, col2, col3, col4 = st.columns([1, 6, 1, 1])
     with col1:
-        if st.button(i18n.t("items.back"), key="cd_back", use_container_width=True):
-            st.session_state.container_detail_id = None
-            st.session_state.jump_to_tab = 5  # 返回容器 Tab（详情在 tabs 之外渲染，否则会重置到首个 Tab）
+        if st.button(i18n.t("items.back"), key=f"{key_prefix}_back", use_container_width=True):
+            st.session_state[exit_key] = None
+            st.session_state.jump_to_tab = return_tab  # 返回来源 Tab（详情在 tabs 之外渲染，否则会重置到首个 Tab）
+            if post_back:
+                st.session_state.update(post_back)
             st.rerun()
     with col3:
         # 编辑后保留 container_detail_id，保存/取消后回到详情页
-        if st.button(i18n.t("items.edit"), key="cd_edit", use_container_width=True):
+        if st.button(i18n.t("items.edit"), key=f"{key_prefix}_edit", use_container_width=True):
             st.session_state.edit_container_id = cid
             st.rerun()
     with col4:
-        if st.button(i18n.t("items.delete"), key="cd_delete", use_container_width=True):
+        if st.button(i18n.t("items.delete"), key=f"{key_prefix}_delete", use_container_width=True):
             item_count, child_count = repo.container_usage(conn, cid)
             if item_count > 0 or child_count > 0:
                 st.error(i18n.t("containers.not_empty", n=item_count, m=child_count))
             else:
                 confirm_container_delete(conn, [cid], name)
 
-    render_detail_readonly(conn, containers_df, cid, exit_key="container_detail_id", key_prefix="cd")
+    render_detail_readonly(conn, containers_df, cid, exit_key=exit_key, key_prefix=key_prefix)
 
 
 def render_detail_full(conn, cid):

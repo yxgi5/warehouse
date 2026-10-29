@@ -5,8 +5,9 @@
 - 默认只渲染第一级（顶层容器），点击节点才展开其直接子容器：长树不再一屏到底，
   没有 Home 键的键盘免去疯狂滚动。
 - 图标：统一使用文件夹图标（合上 📁 / 展开 📂），按展开态切换，不再区分硬盘/文件夹。
-- 行主体（图标+名称区域）点击 = 展开/收起；行尾「详情」按钮保留，就地打开详情页
-  （复用 containers_tab.render_detail_readonly，与容器管理 Tab 一致；返回回到树）。
+- 行主体（图标+名称区域）点击 = 展开/收起；行尾「详情」按钮保留，打开详情页
+  （复用 containers_tab.render_detail_page，与容器管理 Tab 完全一致：同样带
+  返回/编辑/删除工具栏；返回回到树，并经 tree_scroll_restore 还原树滚动位置）。
 - 展开状态存 session_state（tree_expanded 集合）：切换 Tab / 做其他操作回来保持，
   刷新浏览器重置为全收起（无残留、无持久化副作用）。
 - 搜索框：按容器名 / 位置匹配；命中节点的所有祖先自动展开、命中行以 🔍 前缀高亮，
@@ -20,7 +21,7 @@ import streamlit as st
 import pandas as pd
 import repo
 import i18n
-from ui.containers_tab import render_detail_readonly
+from ui.containers_tab import render_detail_readonly, render_detail_page
 
 # 展开状态集合（session 内记忆）：存已展开容器的 id
 _EXPAND_KEY = "tree_expanded"
@@ -193,14 +194,12 @@ def render(conn, search, tag_filter):
 
 
 def render_detail_full(conn, cid):
-    """全屏渲染树详情（app.py 在 st.tabs 之外调用，等价于原树 Tab 内就地详情页）。"""
-    col1, _ = st.columns([1, 6])
-    with col1:
-        if st.button(i18n.t("items.back"), key="tree_detail_back",
-                     use_container_width=True):
-            st.session_state.tree_detail_id = None
-            st.session_state.jump_to_tab = 4  # 返回树 Tab
-            st.session_state.tree_scroll_restore = True  # 返回后还原树滚动位置
-            st.rerun()
-    render_detail_readonly(conn, repo.list_containers(conn), cid,
-                           exit_key="tree_detail_id", key_prefix="tree_item")
+    """全屏渲染树详情（app.py 在 st.tabs 之外调用）。
+
+    复用 containers_tab.render_detail_page，保证「从容器树打开的容器详情」与容器管理
+    Tab 入口完全一致——同样带 返回/编辑/删除 工具栏、可钻取内部物品。返回回到树 Tab
+    (return_tab=4)，并通过 post_back 设置 tree_scroll_restore 以还原树滚动位置。"""
+    render_detail_page(
+        conn, repo.list_containers(conn), cid,
+        exit_key="tree_detail_id", return_tab=4,
+        key_prefix="tree_cd", post_back={"tree_scroll_restore": True})
