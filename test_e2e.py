@@ -611,9 +611,17 @@ def main():
         "跳转后应退出树内容器详情"
     # Items Tab（tabs[0]）应渲染出物品详情子页面（无浏览态控制行 radio）
     assert len(at.tabs[0].radio) == 0, "物品详情未在 Items Tab 渲染（浏览态 radio 不应出现）"
-    at.session_state["detail_item_id"] = None
+    # A1：从树进入详情，Back 应回到「树内容器详情」而非物品列表顶层
+    back_det = find_button(at.tabs[0], label_contains="Back")
+    assert back_det is not None, "物品详情缺返回按钮"
+    back_det.click()
     at.run()
-    print("✅ 树内容器详情 Open Details → 打开物品详情并退出容器详情（jump_to_tab 切 Tab）")
+    assert len(at.exception) == 0, at.exception
+    _td = at.session_state["tree_detail_id"] if "tree_detail_id" in at.session_state else None
+    assert _td == c_with_items, "Back 未回到树内容器详情"
+    at.session_state["tree_detail_id"] = None
+    at.run()
+    print("✅ 树内容器详情 Open Details → 物品详情 → Back 回到树内容器详情（A1 返回来源）")
 
     # 恢复浏览状态
     at.session_state["container_detail_id"] = None

@@ -400,8 +400,14 @@ def render_detail_readonly(conn, containers_df, cid, exit_key, key_prefix="cd"):
                              use_container_width=True):
                     st.session_state.detail_item_id = item_id
                     st.session_state[exit_key] = None   # 跳走即退出当前详情
+                    # 记录来源：详情页 Back 时回到原页面（容器详情 / 树详情）而非物品列表顶层
+                    if exit_key == "container_detail_id":
+                        st.session_state.nav_origin = {"source": "container", "item_id": item_id,
+                                                      "container_detail_id": cid}
+                    elif exit_key == "tree_detail_id":
+                        st.session_state.nav_origin = {"source": "tree", "item_id": item_id,
+                                                      "tree_detail_id": cid}
                     # 物品详情渲染在「物品浏览」Tab：设置跳转标记，app.py 用 JS 切 Tab
-                    # （此前只设 detail_item_id 不切 Tab，用户停留在原 Tab 看到的是清回的列表/树页）
                     st.session_state.jump_to_tab = 0
                     st.toast(i18n.t("containers.jump_item_hint"), icon="📄")
                     st.rerun()

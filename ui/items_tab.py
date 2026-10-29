@@ -22,6 +22,35 @@ except Exception:  # 版本变动时退回 st.image 满宽显示
     _st_get_instance = None
 
 
+# ==================== 导航来源记录 ====================
+# 从某处（物品列表/卡片/容器详情/容器树详情）打开 item 详情或编辑后，
+# 返回时回到"原页面/原位置"，而非固定落到物品列表顶层（A1 + 位置还原）。
+# nav_origin 字段：
+#   source: "items" | "container" | "tree"
+#   item_id: 打开的那件物品 id（用于列表滚动 / 卡片定位还原）
+#   view:    "list" | "card"（仅 items 来源）
+#   card_page: 卡片页码（仅 items+card 来源）
+#   container_detail_id / tree_detail_id: 来源容器/树详情的容器 id（用于跳回并恢复）
+def _restore_nav_origin():
+    """详情/编辑返回时，根据 nav_origin 还原到原页面与位置。"""
+    orig = st.session_state.get("nav_origin")
+    if not orig:
+        return
+    src = orig.get("source")
+    if src == "items":
+        if orig.get("view") == "card":
+            st.session_state.card_page = orig.get("card_page", st.session_state.get("card_page", 1))
+            st.session_state.scroll_to_card = orig.get("item_id")
+        else:
+            st.session_state.restore_list_scroll = True
+    elif src == "container":
+        st.session_state.container_detail_id = orig.get("container_detail_id")
+        st.session_state.jump_to_tab = 5   # 容器管理 Tab 索引
+    elif src == "tree":
+        st.session_state.tree_detail_id = orig.get("tree_detail_id")
+        st.session_state.jump_to_tab = 4   # 容器树 Tab 索引
+
+
 # ==================== 详情图片显示 ====================
 # 显示尺寸用 CSS 约束（竖图高度上限 _DETAIL_IMG_MAX_H，等比缩放；横图高度
 # 天然小于上限，宽度撑满列）。img 的 src 指向 media 存储里的原始文件：
@@ -221,6 +250,7 @@ def render_edit_mode(conn, item_data, container_options):
                                      None, repo.parse_related_text(related_items),
                                      quantity, unit)
                     st.session_state.edit_item_id = None
+                    _restore_nav_origin()   # A1：回到原页面/原位置
                     st.toast(i18n.t("items.updated"), icon="🎉")
                     st.rerun()
                 except Exception as e:
@@ -229,6 +259,7 @@ def render_edit_mode(conn, item_data, container_options):
                     conn.rollback()
         if cancel:
             st.session_state.edit_item_id = None
+            _restore_nav_origin()   # A1：回到原页面/原位置
             st.rerun()
 
     # 图片管理区（放表单外，避免按钮触发表单提交丢数据；增/删/排序全部即时生效，
@@ -305,6 +336,7 @@ def render_detail_page(conn, item, container_options):
     with col1:
         if st.button(i18n.t("items.back"), use_container_width=True):
             st.session_state.detail_item_id = None
+            _restore_nav_origin()   # A1：回到原页面/原位置（而非物品列表顶层）
             st.rerun()
     with col3:
         if st.button(i18n.t("items.edit"), use_container_width=True):
@@ -468,6 +500,10 @@ def render_list_view(conn, df_all, total_items, container_options):
                 if st.button(i18n.t("items.view_detail"), key="item_detail_active",
                              use_container_width=True):
                     st.session_state.detail_item_id = selected_item_ids[0]
+                    st.session_state.nav_origin = {
+                        "source": "items", "item_id": selected_item_ids[0],
+                        "view": st.session_state.view_mode,
+                        "card_page": st.session_state.get("card_page", 1)}
                     st.rerun()
             else:
                 st.button(i18n.t("items.view_detail"), key="item_detail_disabled",
@@ -477,6 +513,10 @@ def render_list_view(conn, df_all, total_items, container_options):
                 if st.button(i18n.t("items.edit"), key="item_edit_active",
                              use_container_width=True):
                     start_edit(conn, selected_item_ids[0], container_options)
+                    st.session_state.nav_origin = {
+                        "source": "items", "item_id": selected_item_ids[0],
+                        "view": st.session_state.view_mode,
+                        "card_page": st.session_state.get("card_page", 1)}
                     st.rerun()
             else:
                 st.button(i18n.t("items.edit"), key="item_edit_disabled",
@@ -504,6 +544,31 @@ def render_list_view(conn, df_all, total_items, container_options):
                           disabled=True, use_container_width=True)
         with col_tool5:
             st.caption(i18n.t("items.list_count", total=total_items, n=selected_count))
+
+    # 列表网格滚动位置还原（A1 位置还原）：滚动时把 dataframe 内部 scrollTop 存
+    # localStorage；返回列表（restore_list_scroll 标记）时读回并设到网格滚动容器。
+    # 用 scrollHeight-clientHeight 启发式定位真正滚动的元素，避免依赖具体 class。
+    _restore = bool(st.session_state.get("restore_list_scroll", False))
+    _js = (
+        "<script>(function(){"
+        "function findScroller(root){var best=root,stack=[root],el;"
+        "while((el=stack.pop())){for(var i=0;i<el.children.length;i++)stack.push(el.children[i]);"
+        "if(el.scrollHeight-el.clientHeight>2)best=el;}return best;}"
+        "var KEY='wh_list_scroll';"
+        "var df=document.querySelector('.stDataFrame');"
+        "if(df){var g=findScroller(df);"
+        "g.addEventListener('scroll',function(){try{localStorage.setItem(KEY,g.scrollTop);}catch(e){}},{passive:true});"
+    )
+    if _restore:
+        _js += (
+            "var y=parseInt(localStorage.getItem(KEY)||'0',10);"
+            "[0,80,200,400].forEach(function(t){setTimeout(function(){"
+            "var gg=findScroller(document.querySelector('.stDataFrame'));if(gg)gg.scrollTop=y;},t);});"
+        )
+    _js += "}})();</script>"
+    st.components.v1.html(_js, height=0)
+    if _restore:
+        st.session_state.restore_list_scroll = False
 
 
 # ==================== 卡片视图 ====================
@@ -539,6 +604,8 @@ def render_card_view(conn, df_all, total_items):
         cols = st.columns(4)
         for idx, row in df_page.iterrows():
             with cols[idx % 4]:
+                # 每卡锚点：返回卡片视图时 scrollIntoView 精确还原到原卡位置
+                st.markdown(f'<a id="card-item-{int(row["id"])}"></a>', unsafe_allow_html=True)
                 img = first_imgs.get(row['id'])
                 if img and os.path.exists(img):
                     # 卡片首图与详情页缩略图同规格：HTML img + CSS 限高，走 media
@@ -565,6 +632,9 @@ def render_card_view(conn, df_all, total_items):
 
                 if st.button(i18n.t("items.open_detail"), key=f"card_{row['id']}", use_container_width=True):
                     st.session_state.detail_item_id = row['id']
+                    st.session_state.nav_origin = {
+                        "source": "items", "item_id": row['id'], "view": "card",
+                        "card_page": st.session_state.get("card_page", 1)}
                     st.rerun()
 
         if total_pages > 1:
@@ -579,6 +649,17 @@ def render_card_view(conn, df_all, total_items):
                     if st.session_state.card_page < total_pages:
                         st.session_state.card_page += 1
                         st.rerun()
+
+    # 卡片视图位置还原（A1 位置还原）：返回时若标记了 scroll_to_card，跳回对应页并
+    # 滚到该卡锚点（card_page 已在 _restore_nav_origin 中设回原页）。
+    _target = st.session_state.get("scroll_to_card")
+    if _target is not None:
+        st.components.v1.html(
+            f"<script>(function(){{var el=document.getElementById('card-item-{int(_target)}');"
+            f"if(el){{[0,80,200,400].forEach(function(t){{setTimeout(function(){{"
+            f"el.scrollIntoView({{block:'center'}});}},t);}});}}}})();</script>",
+            height=0)
+        st.session_state.scroll_to_card = None
 
 
 # ==================== Tab 入口 ====================
