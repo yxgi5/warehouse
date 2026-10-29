@@ -560,27 +560,27 @@ def render_list_view(conn, df_all, total_items, container_options):
             st.caption(i18n.t("items.list_count", total=total_items, n=selected_count))
 
     # 列表滚动位置还原（A1 位置还原）：st.dataframe 真实滚动容器是内部
-    # `.dvn-scroller`（glide 虚拟滚动，浏览器实测 scrollHeight≈10 万 px）；外层
-    # .stDataFrame 只有几像素差，抓它必失败。且本脚本跑在 components iframe 里，
-    # 必须 window.parent.document 才能摸到主页面 DOM（此前两个坑叠加导致还原失效）。
-    # 捕获：滚动时把 .dvn-scroller.scrollTop 存 localStorage；还原：每次列表重渲染
-    # （含选中导致组件重挂载跳回顶部）都按上次位置还原——即使列表更新也停在原位（点 4）。
+    # `.dvn-scroller`（glide 虚拟滚动）；本脚本跑在 components iframe 里，必须
+    # window.parent.document 才能摸到主页面 DOM。
+    # v2（点 4：选中/筛选导致列表更新后有时跳回顶部）：旧版只在首绑定时按时刻表
+    # 还原一次——网格重挂载晚于时刻表时新 scroller 停在 0，且旧版 scroll 监听会把
+    # 0 写回 localStorage，位置彻底丢失。v2 改为按「元素身份」处理：每个 rerun 的
+    # 新 iframe 脚本轮询发现 scroller，新元素（≠last）即绑定监听并按 localStorage
+    # 还原；监听仅当滚动元素正是已还原元素时才写回，避免未还原前把 0 存进去。
     # 切 Tab 时由 app.py 统一清 localStorage（点 6），故切回本 Tab 回到顶部而非残留旧位置。
     # 浏览器实测见 tests/browser_test.py。
     _js = (
         "<script>(function(){"
-        "var doc=window.parent.document,KEY='wh_items_list_scroll',n=0;"
+        "var doc=window.parent.document,KEY='wh_items_list_scroll',last=null;"
         # 限定物品列表容器：st.tabs 各 Tab 都可能渲染 dataframe，全局第一个未必是本列表
         "function scroller(){var df=doc.querySelector('.st-key-item_list_wrap [data-testid=\"stDataFrame\"]');"
         "return df?df.querySelector('.dvn-scroller'):null;}"
-        "function bind(){var g=scroller();"
-        "if(g&&!g.__whBound){g.__whBound=1;"
-        "g.addEventListener('scroll',function(){try{localStorage.setItem(KEY,g.scrollTop);}catch(e){}},{passive:true});}"
-        "if(g){var y=parseInt(localStorage.getItem(KEY)||'0',10);"
-        "[0,150,400,800,1500].forEach(function(t){setTimeout(function(){var gg=scroller();if(gg)gg.scrollTop=y;},t);});"
-        "return true;}return false;}"
-        # 网格为异步挂载，脚本执行时常还不存在——轮询重试绑定（约 6s 上限）
-        "(function tryBind(){if(bind()||++n>40)return;setTimeout(tryBind,150);})();"
+        "function save(){if(this===last){try{localStorage.setItem(KEY,this.scrollTop);}catch(e){}}}"
+        "function tick(){var g=scroller();if(!g)return;"
+        "if(!g.__whBound){g.__whBound=1;g.addEventListener('scroll',save,{passive:true});}"
+        "if(g!==last){last=g;var y=parseInt(localStorage.getItem(KEY)||'0',10);g.scrollTop=y;}}"
+        # 网格为异步挂载且随 rerun 重挂载：每个新 iframe 脚本都对当前元素做绑定/还原
+        "[0,120,300,600,1000,1600,2400,4000].forEach(function(t){setTimeout(tick,t);});"
         "})();</script>"   # 注意：此串非 f-string，双写大括号会原样输出成 JS 语法错误
     )
     st.components.v1.html(_js, height=0)
@@ -683,7 +683,7 @@ def render_card_view(conn, df_all, total_items):
 
 # ==================== Tab 入口 ====================
 
-def render(conn, search, tag_filter, container_options):
+def render(conn, search, tag_filter, container_options, df_shared=None):
     # 会话状态：新增物品子页面开关（Phase 7：新增入口由独立 Tab 收进本 Tab）
     if 'add_item_mode' not in st.session_state:
         st.session_state.add_item_mode = False
@@ -746,8 +746,16 @@ def render(conn, search, tag_filter, container_options):
                     st.rerun()
 
     # 获取数据（用传入的 tag_filter，与 sidebar 同步后的 session_state 保持一致）
-    df_all = repo.get_filtered_data(conn, search, tag_filter)
+    # df_shared：app.py 每 rerun 只查一次的主数据（st.tabs 全量渲染下四个 Tab 共享）
+    df_all = df_shared if df_shared is not None else repo.get_filtered_data(conn, search, tag_filter)
     total_items = len(df_all)
+
+    # 页面滚动锁定（需求：页面不能滚，只有 list 内部滚）：list 视图注入 :root 变量，
+    # app.py 同步 JS 按活动 Tab + 变量给 body 加 wh-lock-scroll（stMain overflow:hidden）。
+    # 变量写在 Tab 面板内——子页面 rerun 时面板不渲染，锁自动解除。
+    st.markdown(
+        f"<style>:root{{--wh-items-lock:{'1' if st.session_state.view_mode == 'list' else '0'}}}</style>",
+        unsafe_allow_html=True)
 
     # --- 列表视图 ---
     if st.session_state.view_mode == "list":

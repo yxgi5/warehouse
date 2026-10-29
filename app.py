@@ -11,6 +11,8 @@
 运行:  streamlit run app.py
 """
 import os
+import time
+import threading
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -69,6 +71,17 @@ with st.container(key="css_inject"):
        提示行底边定点 = main高 − 46 − 20，距工具栏顶(main高−57)恰 9px。
        高度公式动态读 computed padding-bottom，改这里无需动 JS */
     padding-bottom: 46px !important;
+}
+/* 列表浏览态锁定主区滚动（需求：页面不能滚，只有 list 内部滚）：
+   calcListHeight 已把表高算到正好填满视口，个别环境仍剩几 px 幻影溢出导致页面
+   能滚动一小段（吸底工具栏/提示行跟着一起动）。body.wh-lock-scroll 由 JS 施加：
+   仅当「活动 Tab 为物品/容器 且 该 Tab 处于 list 视图」时生效（见下方 applyLock，
+   读 :root 的 --wh-items-lock/--wh-containers-lock，由各 Tab 按 view_mode 注入）。
+   卡片视图页面本身要滚、子页面(详情/编辑)与其它 Tab 不受影响——子页面 rerun 时
+   Tab 面板未渲染，变量不存在，锁自动解除。 */
+body.wh-lock-scroll [data-testid="stMain"] {
+    height: 100vh !important;
+    overflow: hidden !important;
 }
 /* header（Deploy + 菜单）实测是 <header data-testid="stHeader">（非 section，
    之前写成 section 导致整条规则从未生效）。原 position:fixed;left:0;right:0
@@ -315,6 +328,28 @@ body.wh-list-fullscreen .st-key-fs_exit { display: block !important; }
             doc.body.classList.toggle('wh-list-fullscreen', v === '1');
         } catch (e) { }
     }
+    // 列表浏览态滚动锁：仅当活动 Tab 为物品/容器且该 Tab 处于 list 视图时锁主区滚动。
+    // --wh-items-lock/--wh-containers-lock 由各 Tab 按 view_mode 注入（写在 Tab 面板内，
+    // 子页面 rerun 时面板不存在 → 变量消失 → 锁自动解除，详情/编辑页可正常滚动）。
+    // Tab 用「索引」判定（0=Items、5=Containers）而非标签文本——文本匹配会误伤
+    // 树 Tab（其实测曾把树页锁死、内容被裁剪只剩首屏）。
+    // st.tabs 切换是纯前端行为（不触发 rerun/无属性突变），故另挂 document click 监听。
+    function applyLock() {
+        try {
+            var doc = window.parent.document;
+            if (!doc || !doc.body) return;
+            var btns = doc.querySelectorAll('[data-baseweb="tab-list"] button');
+            var idx = -1, i;
+            for (i = 0; i < btns.length; i++) {
+                if (btns[i].getAttribute('aria-selected') === 'true') { idx = i; break; }
+            }
+            var cs = getComputedStyle(doc.documentElement);
+            var lock = '0';
+            if (idx === 0) lock = (cs.getPropertyValue('--wh-items-lock') || '0').trim();
+            else if (idx === 5) lock = (cs.getPropertyValue('--wh-containers-lock') || '0').trim();
+            doc.body.classList.toggle('wh-lock-scroll', lock === '1');
+        } catch (e) { }
+    }
     // Step 2：列表视图表格高度视口自适应。
     // 公式：可用高 = 视口高 − 表顶(视口坐标) − 选中提示 alert 高 − 主区 padding-bottom − 缓冲。
     // 吸底工具栏 position:fixed 不入流，故不计入；表格只填到 alert 之上、工具栏之下，无页面滚动条。
@@ -365,9 +400,10 @@ body.wh-list-fullscreen .st-key-fs_exit { display: block !important; }
     }
     var _calcT = null;
     function scheduleCalc() { clearTimeout(_calcT); _calcT = setTimeout(calcListHeight, 60); }
-    function onWinChange() { sync(); applyFullscreen(); calcListHeight(); }
+    function onWinChange() { sync(); applyFullscreen(); applyLock(); calcListHeight(); }
     sync();
     applyFullscreen();
+    applyLock();
     window.addEventListener('resize', onWinChange);
     // 关键：本 iframe 在隐藏容器内，父窗口缩放时它自己收不到 resize 事件，
     // 表格高度会一直用旧值（用户环境滚动条/空区问题的根源之一）。
@@ -378,7 +414,7 @@ body.wh-list-fullscreen .st-key-fs_exit { display: block !important; }
     // 但执行时机可能早于侧边栏渲染——实测会量到未渲染时的全宽 left=0 且此后
     // 无属性变化可再触发。故加延迟重试 + load 事件；下面的 ResizeObserver
     // 负责侧边栏折叠/展开（主区宽度变化）这类不伴随属性变化的布局变动。
-    [0, 100, 300, 800, 1500].forEach(function (t) { setTimeout(function () { sync(); applyFullscreen(); calcListHeight(); }, t); });
+    [0, 100, 300, 800, 1500].forEach(function (t) { setTimeout(function () { sync(); applyFullscreen(); applyLock(); calcListHeight(); }, t); });
     var doc = window.parent.document;
     var main = doc && doc.querySelector('section[data-testid="stMain"]');
     if (main && 'ResizeObserver' in window) {
@@ -389,7 +425,7 @@ body.wh-list-fullscreen .st-key-fs_exit { display: block !important; }
         // childList+subtree：选中行变化会增删 alert（height 随之变）或切换视图，需重算表格高度；
         // characterData：--list-fullscreen 由 fs_state 的 <style> 文本注入（非 :root inline
         // style），其文本变化会触发字符数据突变 → 顺带 applyFullscreen() 切换全屏 class。
-        new MutationObserver(function () { applyFullscreen(); scheduleCalc(); }).observe(main, { attributes: true, childList: true, subtree: true, characterData: true, attributeFilter: ['style', 'class'] });
+        new MutationObserver(function () { applyFullscreen(); applyLock(); scheduleCalc(); }).observe(main, { attributes: true, childList: true, subtree: true, characterData: true, attributeFilter: ['style', 'class'] });
     }
     // Step 3：--list-fullscreen 写在 :root（documentElement）上，故观察它而非 main，
     // 变量一变立即切换全屏 class（不依赖 iframe 是否随 rerun 重执行）
@@ -404,6 +440,8 @@ body.wh-list-fullscreen .st-key-fs_exit { display: block !important; }
                 if (v === '1') { var b = doc.querySelector('.st-key-fs_exit button'); if (b) b.click(); }
             }
         });
+        // Tab 切换是纯前端行为（aria-selected 变化不触发 rerun/突变），点完延迟重判滚动锁
+        doc.addEventListener('click', function () { setTimeout(applyLock, 80); });
     }
 })();
 </script>
@@ -440,26 +478,45 @@ conn = get_conn()
 # 备份必须是迁移前的完整快照（迁移中断可手动恢复）；首次全新库时 db 尚不存在，
 # backup_data 跳过 db 只打包 photos，无害。
 # WH_SKIP_AUTO_BACKUP=1 供自动化浏览器测试跳过 1.9GB photos 打包（不影响正常使用）
+# 性能（点：刷新后页面加载极慢）：backup_data 同步打包 1.9GB photos 会把会话首屏
+# 阻塞数秒~数十秒 → 移入后台线程，页面立即渲染；结果路径经 db.BG（模块级、跨
+# rerun/线程持久）带回，下方每 rerun 同步到 session_state 供侧栏显示。
+# 注意：线程内不能调 st.*（无 ScriptRunContext），备份失败只记日志、不再 st.warning。
 if not st.session_state.backup_done and os.environ.get("WH_SKIP_AUTO_BACKUP") != "1":
-    try:
-        st.session_state.last_backup = db.backup_data()
-    except Exception as e:
-        db.logger.exception("自动备份失败")
-        st.warning(i18n.t("app.backup_fail", err=e))
     st.session_state.backup_done = True
+
+    def _bg_backup():
+        try:
+            db.BG["backup_path"] = db.backup_data()
+        except Exception:
+            db.logger.exception("自动备份失败(后台线程)")
+
+    threading.Thread(target=_bg_backup, daemon=True, name="wh-backup").start()
+st.session_state.last_backup = db.BG.get("backup_path")
 
 # --- 建表/迁移 ---
 db.init_db(conn)
 
-# 孤儿图片记录扫描（会话内只查一次）
+# 孤儿图片记录扫描：数千张图片逐个 os.path.exists 是会话首屏第二大阻塞点。
+# 进程级缓存 10 分钟（db.BG）——刷新页面/新会话直接复用，不重复扫盘；
+# 侧栏「清理孤儿记录」后会重置缓存（见 sidebar.py）。
 if st.session_state.orphans is None:
-    st.session_state.orphans = db.find_orphan_images(conn)
+    if db.BG["orphans"] is not None and time.time() - db.BG["orphans_ts"] < 600:
+        st.session_state.orphans = db.BG["orphans"]
+    else:
+        st.session_state.orphans = db.find_orphan_images(conn)
+        db.BG["orphans"] = st.session_state.orphans
+        db.BG["orphans_ts"] = time.time()
 
 # 全局容器选项（统一在此查询一次，各 Tab 通过参数共享，不再各自重建）
 container_options = repo.get_container_options(conn)
 
 # --- 侧边栏（返回全局筛选条件） ---
 search, tag_filter = sidebar.render(conn)
+
+# 物品主查询每次 rerun 只执行一次：st.tabs 全量渲染下 items/dashboard/timeline/tags
+# 四个 Tab 原本各自重复执行同一查询（3067 行 × 4）。tree_tab 不需要该数据。
+df_all_shared = repo.get_filtered_data(conn, search, tag_filter)
 
 # --- 主界面 ---
 st.title(i18n.t("app.main_title"))
@@ -492,22 +549,15 @@ with st.container(key="fs_exit"):
 # 跨 Tab 跳转（容器详情「Open Details」→ 物品详情页在「物品浏览」Tab）：
 # st.tabs 1.40 无 key/on_change，用 JS 模拟点击目标 Tab 按钮（Phase 7 前同款
 # goto_tab 机制的按需恢复）。一次性标记：读到即清除，避免后续 rerun 反复跳。
+#
+# ★ 必须无条件渲染（与下方「子页置顶」合并为一个常驻 components.html 占位）：
+#   components.html 若按条件出现/消失，它位于 st.tabs 之前，主区子元素数量随之
+#   变化，React 按索引协调会把 tabs 子树当成新元素而【重挂载】→ 活动 Tab 选中态
+#   归零（browser_probe15 实测：树 Tab 点 Expand all 触发 rerun 后活动 Tab 被翻回
+#   Items）。这正是「残留 detail 态导致 Tab 重置」这一类 bug 的深层机制——凡在
+#   tabs 之前条件渲染元素都会引发。常驻占位（无动作时空操作）从根上消除。
 _jump = st.session_state.pop("jump_to_tab", None)
-if _jump is not None:
-    components.html(f"""
-<script>
-(function() {{
-    function jump() {{
-        try {{
-            var doc = window.parent.document;
-            var tabs = doc.querySelectorAll('[data-baseweb="tab-list"] button');
-            if (tabs && tabs.length > {int(_jump)}) tabs[{int(_jump)}].click();
-        }} catch (e) {{}}
-    }}
-    [0, 60, 200, 500].forEach(function(t) {{ setTimeout(jump, t); }});
-}})();
-</script>
-""", height=0)
+_jump = int(_jump) if _jump is not None else -1
 
 # 详情/编辑/新增等子页面以全屏形式呈现，置于 st.tabs 之外：
 # st.tabs 在 1.40 无 key，当某个 Tab 内容因残留 detail 态变成「子页面」时，每次 rerun 活动 Tab
@@ -516,6 +566,73 @@ if _jump is not None:
 # 用 session_state.get 读键，避免尚未初始化的键抛 KeyError（初始化在各 Tab render 内、位于本段之后）。
 def _gs(k, d=None):
     return st.session_state.get(k, d)
+
+# 进入/切换子页面时置顶（点 3：从列表底部进入详情页，详情页却停在底部）。
+# 根因：Streamlit 的真实滚动容器是 stMain（overflow:auto），rerun 会原样保留其
+# scrollTop——此前 render_detail_page 里只 window.scrollTo(0,0) 治不了它。
+# 用「子页面签名」判定是否新进入：签名不变（子页内传图/展开等 rerun）不强制置顶，
+# 避免用户在长详情页里下翻后被反复拽回顶部；离开子页面时清掉签名。
+_subpage_sig = None
+if _gs("edit_item_id") is not None:
+    _subpage_sig = "edit_item:%s" % _gs("edit_item_id")
+elif _gs("add_item_mode", False):
+    _subpage_sig = "add_item"
+elif _gs("detail_item_id") is not None:
+    _subpage_sig = "detail_item:%s" % _gs("detail_item_id")
+elif _gs("edit_container_id") is not None:
+    _subpage_sig = "edit_container:%s" % _gs("edit_container_id")
+elif _gs("add_container_mode", False):
+    _subpage_sig = "add_container"
+elif _gs("container_detail_id") is not None:
+    _subpage_sig = "container_detail:%s" % _gs("container_detail_id")
+elif _gs("tree_detail_id") is not None:
+    _subpage_sig = "tree_detail:%s" % _gs("tree_detail_id")
+
+if _subpage_sig is None:
+    st.session_state.pop("_fs_sig", None)
+    _scroll_top = 0
+elif st.session_state.get("_fs_sig") != _subpage_sig:
+    st.session_state["_fs_sig"] = _subpage_sig
+    _scroll_top = 1
+else:
+    _scroll_top = 0
+
+# 常驻「页面导航」iframe：jump_to_tab 跳转 + 子页置顶二合一，无条件渲染（见上方
+# ★ 说明——条件渲染会让 tabs 重挂载、活动 Tab 归零）。无动作时两个标志均为
+# 关闭态，脚本直接空操作。height=0 不可见。
+components.html(f"""
+<script>
+(function () {{
+    var jump = {int(_jump)};
+    var scrollTop = {_scroll_top};
+    if (jump >= 0) {{
+        function jumpFn() {{
+            try {{
+                var doc = window.parent.document;
+                var tabs = doc.querySelectorAll('[data-baseweb="tab-list"] button');
+                if (tabs && tabs.length > jump) tabs[jump].click();
+            }} catch (e) {{}}
+        }}
+        [0, 60, 200, 500].forEach(function (t) {{ setTimeout(jumpFn, t); }});
+    }}
+    if (scrollTop) {{
+        function topFn() {{
+            try {{
+                var doc = window.parent.document;
+                var m = doc.querySelector('section[data-testid="stMain"]') ||
+                        doc.querySelector('[data-testid="stMain"]');
+                if (m) m.scrollTop = 0;
+                doc.documentElement.scrollTop = 0;
+                if (doc.body) doc.body.scrollTop = 0;
+                window.parent.scrollTo(0, 0);
+            }} catch (e) {{}}
+        }}
+        // 详情页图片等异步加载会晚于首帧，多点几次兜底（框架自身的滚动恢复也会抢位）
+        [0, 100, 300, 600, 1000, 1600, 2400].forEach(function (t) {{ setTimeout(topFn, t); }});
+    }}
+}})();
+</script>
+""", height=0)
 
 # 注意优先级：编辑/新增态必须排在对应详情态之前，否则残留在 session_state 里的
 # detail_* 会"劫持"活动页——这正是当初 Tab 被劫持 bug 的同类根因（详情态优先于编辑态）。
@@ -564,16 +681,16 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
 )
 
 with tab1:
-    items_tab.render(conn, search, tag_filter, container_options)
+    items_tab.render(conn, search, tag_filter, container_options, df_all_shared)
 
 with tab2:
-    dashboard_tab.render(conn, search, tag_filter)
+    dashboard_tab.render(conn, search, tag_filter, df_all_shared)
 
 with tab3:
-    timeline_tab.render(conn, search, tag_filter)
+    timeline_tab.render(conn, search, tag_filter, df_all_shared)
 
 with tab4:
-    tags_tab.render(conn, search, tag_filter)
+    tags_tab.render(conn, search, tag_filter, df_all_shared)
 
 with tab5:
     tree_tab.render(conn, search, tag_filter)

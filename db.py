@@ -26,6 +26,13 @@ LOG_PATH = os.path.join(LOG_DIR, "warehouse.log")
 
 logger = logging.getLogger("warehouse")
 
+# 进程级后台任务结果（app.py 每 rerun 读取；模块只 import 一次，跨 rerun/线程持久）：
+# - backup_path：后台线程自动备份完成后写入的 zip 路径（同步打包 1.9GB photos 会把
+#   会话首屏阻塞数秒~数十秒，是「刷新后加载极慢」的头号原因，故移入后台线程）
+# - orphans / orphans_ts：孤儿图片扫描结果与时间戳（10 分钟内复用，刷新页面不再
+#   对数千张图片逐个 os.path.exists）
+BG = {"backup_path": None, "orphans": None, "orphans_ts": 0.0}
+
 
 def setup_logging():
     """配置滚动日志文件（1MB × 3 份）。幂等：重复调用不会叠加 handler。"""
