@@ -579,8 +579,9 @@ def render_browse(conn, containers_df):
             st.caption(i18n.t("containers.list_count", total=len(containers_df), n=selected_count))
 
     # 容器管理列表滚动位置还原（点 5）：与物品列表同机制（.dvn-scroller + localStorage），
-    # 打开容器详情再返回（cd_back）时停在原位置。v2 按元素身份处理重挂载：
-    # 新 scroller 出现即绑定监听并按上次位置还原（选中/更新后仍停在原位，点 4）；
+    # 打开容器详情再返回（cd_back）时停在原位置。v3 短窗强制 + 用户滚动即释放
+    # （同 items v3）：消除"返回时顶/底交替闪、最后停在顶"——长窗反复设 scrollTop
+    # 与 glide 初始化(0)互相抢位；现仅压过初始抖动后交还用户。
     # 监听仅当滚动元素正是已还原元素时才写回，避免重挂载瞬间把 0 写进存储。
     # 切 Tab 由 app.py 统一清 localStorage（点 6）。
     _cjs = (
@@ -589,9 +590,14 @@ def render_browse(conn, containers_df):
         "function scroller(){var df=doc.querySelector('.st-key-container_list_wrap [data-testid=\"stDataFrame\"]');"
         "return df?df.querySelector('.dvn-scroller'):null;}"
         "function save(){if(this===last){try{localStorage.setItem(KEY,this.scrollTop);}catch(e){}}}"
+        "function enforce(g,val,ms){var t0=Date.now(),stopped=false,lastOur=-1,el=g;"
+        "function set(){lastOur=Date.now();el.scrollTop=val;}"
+        "function onScroll(){if(Date.now()-lastOur<50)return;stopped=true;}"
+        "el.addEventListener('scroll',onScroll,{passive:true});"
+        "function loop(){if(stopped)return;set();if(Date.now()-t0<ms)requestAnimationFrame(loop);}loop();}"
         "function tick(){var g=scroller();if(!g)return;"
         "if(!g.__whBound){g.__whBound=1;g.addEventListener('scroll',save,{passive:true});}"
-        "if(g!==last){last=g;var y=parseInt(localStorage.getItem(KEY)||'0',10);g.scrollTop=y;}}"
+        "if(g!==last){last=g;var y=parseInt(localStorage.getItem(KEY)||'0',10);enforce(g,y,700);}}"
         "[0,120,300,600,1000,1600,2400,4000].forEach(function(t){setTimeout(tick,t);});"
         "})();</script>"
     )
@@ -706,13 +712,19 @@ def render_card_view(conn, containers_df):
     # 卡片视图位置还原（点 5）：若标记了 container_card_return（从卡片进详情时记录），
     # 滚动到对应卡锚点后清除。容器卡片用页面(stMain)滚动，无 localStorage 记忆，
     # 锚点是唯一可靠的还原手段（stMain scrollTop 数值跨内容切换无意义）。
+    # 短窗(700ms)内多次 scrollIntoView 压过初始抖动 + 用户滚动即释放（避免返回时
+    # 反复 scrollIntoView 引起顶/底交替闪）。
     _target = st.session_state.get("container_card_return")
     if _target is not None:
         st.components.v1.html(
             f"<script>(function(){{var doc=window.parent.document,"
             f"el=doc.getElementById('card-container-{int(_target)}');"
-            f"if(el){{[0,120,300,600,1200,2000].forEach(function(t){{setTimeout(function(){{"
-            f"el.scrollIntoView({{block:'center'}});}},t);}});}}}})();</script>",
+            f"if(el){{var t0=Date.now(),stopped=false,lastOur=-1;"
+            f"function set(){{lastOur=Date.now();el.scrollIntoView({{block:'center'}});}}"
+            f"function onScroll(){{if(Date.now()-lastOur<50)return;stopped=true;}}"
+            f"doc.querySelector('section[data-testid=\"stMain\"]').addEventListener('scroll',onScroll,{{passive:true}});"
+            f"function loop(){{if(stopped)return;set();if(Date.now()-t0<700)requestAnimationFrame(loop);}}loop();"
+            f"[0,150,400].forEach(function(t){{setTimeout(set,t);}});}}}})();</script>",
             height=0)
         st.session_state.container_card_return = None
 

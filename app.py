@@ -616,19 +616,32 @@ components.html(f"""
         [0, 60, 200, 500].forEach(function (t) {{ setTimeout(jumpFn, t); }});
     }}
     if (scrollTop) {{
-        function topFn() {{
-            try {{
-                var doc = window.parent.document;
-                var m = doc.querySelector('section[data-testid="stMain"]') ||
-                        doc.querySelector('[data-testid="stMain"]');
-                if (m) m.scrollTop = 0;
-                doc.documentElement.scrollTop = 0;
-                if (doc.body) doc.body.scrollTop = 0;
-                window.parent.scrollTo(0, 0);
-            }} catch (e) {{}}
+        // 进入子页强制置顶。关键：只在 ~700ms 短窗内强制，且一旦用户自己滚动就立即释放——
+        // 否则像旧版那样在 0~2400ms 里反复 scrollTop=0，用户下滚会被反复拽回顶部（点 3 实测
+        // 闪烁/弹回）。短窗足够压过框架自身的滚动恢复；之后把滚动权交还用户。
+        function whEnforce(getEl, val, ms) {{
+            var doc = window.parent.document;
+            var t0 = Date.now(), stopped = false, lastOur = -1, el = null;
+            function set() {{ el = getEl(); if (!el) return; lastOur = Date.now(); el.scrollTop = val; }}
+            function onScroll() {{ if (Date.now() - lastOur < 50) return; stopped = true; }}
+            function loop() {{
+                if (stopped) return;
+                set();
+                if (Date.now() - t0 < ms) requestAnimationFrame(loop);
+            }}
+            var tries = 0;
+            (function attach() {{
+                var e = getEl();
+                if (e) {{ if (e !== el) {{ el = e; e.addEventListener('scroll', onScroll, {{passive:true}}); }} }}
+                else if (tries++ < 120) setTimeout(attach, 25);
+            }})();
+            loop();
         }}
-        // 详情页图片等异步加载会晚于首帧，多点几次兜底（框架自身的滚动恢复也会抢位）
-        [0, 100, 300, 600, 1000, 1600, 2400].forEach(function (t) {{ setTimeout(topFn, t); }});
+        whEnforce(function () {{
+            var doc = window.parent.document;
+            return doc.querySelector('section[data-testid="stMain"]') ||
+                   doc.querySelector('[data-testid="stMain"]');
+        }}, 0, 700);
     }}
 }})();
 </script>

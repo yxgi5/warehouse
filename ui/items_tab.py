@@ -562,11 +562,12 @@ def render_list_view(conn, df_all, total_items, container_options):
     # 列表滚动位置还原（A1 位置还原）：st.dataframe 真实滚动容器是内部
     # `.dvn-scroller`（glide 虚拟滚动）；本脚本跑在 components iframe 里，必须
     # window.parent.document 才能摸到主页面 DOM。
-    # v2（点 4：选中/筛选导致列表更新后有时跳回顶部）：旧版只在首绑定时按时刻表
-    # 还原一次——网格重挂载晚于时刻表时新 scroller 停在 0，且旧版 scroll 监听会把
-    # 0 写回 localStorage，位置彻底丢失。v2 改为按「元素身份」处理：每个 rerun 的
-    # 新 iframe 脚本轮询发现 scroller，新元素（≠last）即绑定监听并按 localStorage
-    # 还原；监听仅当滚动元素正是已还原元素时才写回，避免未还原前把 0 存进去。
+    # v3（点 4 + 用户反馈"返回时顶/底交替闪、最后停在顶"）：旧版在 0~4000ms 长窗里
+    # 反复设 scrollTop，与 glide 的初始化(0)互相抢位 → 闪烁且最终被框架覆盖停在顶。
+    # v3 改为「发现新 scroller 即短窗(~700ms)强制还原 + 一旦用户自己滚动立即释放」，
+    # 既压过 glide 初始化的抖动，又不长时间霸占滚动（避免进入详情/返回时弹回顶部）。
+    # 短窗过后用户自由滚动；若期间发生 rerun 重挂载，tick 会再检出新元素并重新短窗还原。
+    # 监听仅当滚动元素正是已还原元素时才写回存储，避免未还原前把 0 存进去。
     # 切 Tab 时由 app.py 统一清 localStorage（点 6），故切回本 Tab 回到顶部而非残留旧位置。
     # 浏览器实测见 tests/browser_test.py。
     _js = (
@@ -576,9 +577,15 @@ def render_list_view(conn, df_all, total_items, container_options):
         "function scroller(){var df=doc.querySelector('.st-key-item_list_wrap [data-testid=\"stDataFrame\"]');"
         "return df?df.querySelector('.dvn-scroller'):null;}"
         "function save(){if(this===last){try{localStorage.setItem(KEY,this.scrollTop);}catch(e){}}}"
+        # 短窗强制 + 用户滚动即释放（与 app.py 的 whEnforce 同思路）
+        "function enforce(g,val,ms){var t0=Date.now(),stopped=false,lastOur=-1,el=g;"
+        "function set(){lastOur=Date.now();el.scrollTop=val;}"
+        "function onScroll(){if(Date.now()-lastOur<50)return;stopped=true;}"
+        "el.addEventListener('scroll',onScroll,{passive:true});"
+        "function loop(){if(stopped)return;set();if(Date.now()-t0<ms)requestAnimationFrame(loop);}loop();}"
         "function tick(){var g=scroller();if(!g)return;"
         "if(!g.__whBound){g.__whBound=1;g.addEventListener('scroll',save,{passive:true});}"
-        "if(g!==last){last=g;var y=parseInt(localStorage.getItem(KEY)||'0',10);g.scrollTop=y;}}"
+        "if(g!==last){last=g;var y=parseInt(localStorage.getItem(KEY)||'0',10);enforce(g,y,700);}}"
         # 网格为异步挂载且随 rerun 重挂载：每个新 iframe 脚本都对当前元素做绑定/还原
         "[0,120,300,600,1000,1600,2400,4000].forEach(function(t){setTimeout(tick,t);});"
         "})();</script>"   # 注意：此串非 f-string，双写大括号会原样输出成 JS 语法错误
