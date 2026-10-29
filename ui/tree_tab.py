@@ -56,6 +56,7 @@ def render(conn, search, tag_filter):
             if st.button(i18n.t("items.back"), key="tree_detail_back",
                          use_container_width=True):
                 st.session_state.tree_detail_id = None
+                st.session_state.tree_scroll_restore = True  # 返回后还原树滚动位置
                 st.rerun()
         render_detail_readonly(conn, containers_df, cid,
                                exit_key="tree_detail_id", key_prefix="tree_item")
@@ -153,6 +154,43 @@ def render(conn, search, tag_filter):
     for top in children_map.get(None, []):
         render_node(top, 0)
 
+    # ===== 树视图滚动位置保存/还原（用户反馈：展开多层进入详情返回后没回原位、回到顶部）=====
+    # 树用整页 stMain 滚动（无内部 scroller），故直接以 stMain.scrollTop 持久化。
+    # - 始终挂一个保存监听：仅在树 Tab(idx=4)激活时把 stMain.scrollTop 写入 localStorage；
+    #   window 级守卫保证只挂一次（每次 rerun 都重注入脚本，但不重复绑定）。
+    # - 从树详情返回(tree_detail_back 置 tree_scroll_restore)时：等待树 Tab 重新激活后，
+    #   按存储值短窗(~700ms)还原 + 用户滚动即释放（与 items/containers 列表还原 v3 同思路），
+    #   既压过框架自身滚动恢复，又不长时间霸占滚动条。
+    st.components.v1.html(
+        "<script>(function(){"
+        "var doc=window.parent.document,KEY='wh_tree_scroll';"
+        "function treeIdx(){var b=doc.querySelectorAll('[data-baseweb=\"tab-list\"] button');"
+        "for(var i=0;i<b.length;i++){if(b[i].getAttribute('aria-selected')==='true')return i;}return -1;}"
+        "function stMain(){return doc.querySelector('section[data-testid=\"stMain\"]')||doc.querySelector('[data-testid=\"stMain\"]');}"
+        "if(!window.__whTreeSave){window.__whTreeSave=1;"
+        "doc.addEventListener('scroll',function(){if(treeIdx()===4){var m=stMain();if(m){try{localStorage.setItem(KEY,m.scrollTop);}catch(e){}}}},{capture:true,passive:true});}"
+        "})();</script>",
+        height=0,
+    )
+    if st.session_state.get("tree_scroll_restore"):
+        st.session_state.tree_scroll_restore = False
+        st.components.v1.html(
+            "<script>(function(){"
+            "var doc=window.parent.document,KEY='wh_tree_scroll';"
+            "function treeIdx(){var b=doc.querySelectorAll('[data-baseweb=\"tab-list\"] button');"
+            "for(var i=0;i<b.length;i++){if(b[i].getAttribute('aria-selected')==='true')return i;}return -1;}"
+            "function stMain(){return doc.querySelector('section[data-testid=\"stMain\"]')||doc.querySelector('[data-testid=\"stMain\"]');}"
+            "var tries=0;"
+            "(function wait(){if(treeIdx()===4){start();return;}if(tries++<60)setTimeout(wait,50);})();"
+            "function start(){var m=stMain();if(!m)return;var t0=Date.now(),stopped=false,lastOur=-1;"
+            "function set(){lastOur=Date.now();m.scrollTop=parseInt(localStorage.getItem(KEY)||'0',10);}"
+            "function onScroll(){if(Date.now()-lastOur<50)return;stopped=true;}"
+            "m.addEventListener('scroll',onScroll,{passive:true});"
+            "function loop(){if(stopped)return;set();if(Date.now()-t0<700)requestAnimationFrame(loop);}loop();}"
+            "})();</script>",
+            height=0,
+        )
+
 
 def render_detail_full(conn, cid):
     """全屏渲染树详情（app.py 在 st.tabs 之外调用，等价于原树 Tab 内就地详情页）。"""
@@ -162,6 +200,7 @@ def render_detail_full(conn, cid):
                      use_container_width=True):
             st.session_state.tree_detail_id = None
             st.session_state.jump_to_tab = 4  # 返回树 Tab
+            st.session_state.tree_scroll_restore = True  # 返回后还原树滚动位置
             st.rerun()
     render_detail_readonly(conn, repo.list_containers(conn), cid,
                            exit_key="tree_detail_id", key_prefix="tree_item")
