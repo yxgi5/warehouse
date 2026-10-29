@@ -17,7 +17,7 @@ import streamlit.components.v1 as components
 import db
 import repo
 import i18n
-from ui import sidebar, items_tab, dashboard_tab, timeline_tab, tags_tab, tree_tab, containers_tab
+from ui import sidebar, items_tab, dashboard_tab, timeline_tab, tags_tab, tree_tab, containers_tab, add_tab
 
 # --- 语言设置（set_page_config 之前；set_lang 不是 st 调用，不违反"第一个 st 调用"约束） ---
 i18n.set_lang(st.session_state.get('lang', 'en'))
@@ -508,6 +508,47 @@ if _jump is not None:
 }})();
 </script>
 """, height=0)
+
+# 详情/编辑/新增等子页面以全屏形式呈现，置于 st.tabs 之外：
+# st.tabs 在 1.40 无 key，当某个 Tab 内容因残留 detail 态变成「子页面」时，每次 rerun 活动 Tab
+# 会被重置回首个，导致残留的 detail 态「劫持」活动 Tab（真实复现：树→item 详情→切容器 Tab→选
+# 容器→查看详情，打开的却是旧 item 详情）。把子页面提到 tabs 之外、渲染后 st.stop()，彻底规避。
+# 用 session_state.get 读键，避免尚未初始化的键抛 KeyError（初始化在各 Tab render 内、位于本段之后）。
+def _gs(k, d=None):
+    return st.session_state.get(k, d)
+
+# 注意优先级：编辑/新增态必须排在对应详情态之前，否则残留在 session_state 里的
+# detail_* 会"劫持"活动页——这正是当初 Tab 被劫持 bug 的同类根因（详情态优先于编辑态）。
+# 原 tab 内渲染时也是 edit 先于 detail，这里保持一致。
+if _gs("edit_item_id") is not None:
+    item = repo.load_item_by_id(conn, st.session_state.edit_item_id)
+    if not item:
+        st.session_state.edit_item_id = None
+    else:
+        items_tab.render_edit_mode(conn, item, container_options)
+        st.stop()
+elif _gs("add_item_mode", False):
+    add_tab.render(conn, container_options)
+    st.stop()
+elif _gs("detail_item_id") is not None:
+    item = repo.load_item_by_id(conn, st.session_state.detail_item_id)
+    if item is None:
+        st.session_state.detail_item_id = None
+    else:
+        items_tab.render_detail_page(conn, item, container_options)
+        st.stop()
+elif _gs("edit_container_id") is not None:
+    containers_tab.render_edit_full(conn, st.session_state.edit_container_id)
+    st.stop()
+elif _gs("add_container_mode", False):
+    containers_tab.render_add_full(conn)
+    st.stop()
+elif _gs("container_detail_id") is not None:
+    containers_tab.render_detail_full(conn, st.session_state.container_detail_id)
+    st.stop()
+elif _gs("tree_detail_id") is not None:
+    tree_tab.render_detail_full(conn, st.session_state.tree_detail_id)
+    st.stop()
 
 # --- 定义Tabs ---
 # 注：Streamlit 1.40 的 st.tabs 不支持 key/on_change（1.55 才引入）。

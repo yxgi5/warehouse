@@ -173,6 +173,7 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
                     st.toast(saved_msg, icon="✅")
                     st.session_state.edit_container_id = None
                     st.session_state.add_container_mode = False
+                    st.session_state.jump_to_tab = 5  # 返回容器 Tab
                     st.rerun()   # 全局容器选项由 app.py 顶层重新查询
                 except Exception as e:
                     db.logger.exception("保存容器失败")
@@ -183,6 +184,7 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
             st.session_state.add_container_staged_photos = []
             st.session_state.edit_container_id = None
             st.session_state.add_container_mode = False
+            st.session_state.jump_to_tab = 5  # 返回容器 Tab
             st.rerun()
         if delete_btn:
             # 检查容器是否可删除（无物品且无子容器）
@@ -448,6 +450,7 @@ def render_detail_page(conn, containers_df, cid):
     with col1:
         if st.button(i18n.t("items.back"), key="cd_back", use_container_width=True):
             st.session_state.container_detail_id = None
+            st.session_state.jump_to_tab = 5  # 返回容器 Tab（详情在 tabs 之外渲染，否则会重置到首个 Tab）
             st.rerun()
     with col3:
         # 编辑后保留 container_detail_id，保存/取消后回到详情页
@@ -463,6 +466,19 @@ def render_detail_page(conn, containers_df, cid):
                 confirm_container_delete(conn, [cid], name)
 
     render_detail_readonly(conn, containers_df, cid, exit_key="container_detail_id", key_prefix="cd")
+
+
+def render_detail_full(conn, cid):
+    """全屏渲染容器详情（app.py 在 st.tabs 之外调用，规避 st.tabs 1.40 无 key 的 Tab 重置问题）。"""
+    render_detail_page(conn, repo.list_containers(conn), cid)
+
+
+def render_edit_full(conn, cid):
+    render_edit_form(conn, repo.list_containers(conn), is_edit=True, cont_id=cid)
+
+
+def render_add_full(conn):
+    render_edit_form(conn, repo.list_containers(conn), is_edit=False)
 
 
 # ==================== 列表视图 ====================
@@ -521,6 +537,12 @@ def render_browse(conn, containers_df):
             if selected_count == 1:
                 if st.button(i18n.t("containers.open_detail"), key="container_detail_active",
                              use_container_width=True):
+                    # 互斥：打开容器详情前清掉其它 Tab 的详情/子页态，避免残留的
+                    # detail_item_id 让「物品浏览」Tab 在后台仍渲染旧物品详情、进而劫持活动 Tab
+                    st.session_state.detail_item_id = None
+                    st.session_state.edit_item_id = None
+                    st.session_state.add_item_mode = False
+                    st.session_state.tree_detail_id = None
                     st.session_state.container_detail_id = selected_container_ids[0]
                     st.rerun()
             else:
@@ -551,6 +573,25 @@ def render_browse(conn, containers_df):
                 st.button(i18n.t("items.delete"), key="container_delete_disabled", disabled=True, use_container_width=True)
         with col_tool4:
             st.caption(i18n.t("containers.list_count", total=len(containers_df), n=selected_count))
+
+    # 容器管理列表滚动位置还原（点 5）：与物品列表同机制（.dvn-scroller + localStorage），
+    # 打开容器详情再返回（cd_back）时停在原位置；选中导致重挂载跳顶也按上次位置还原。
+    # 切 Tab 由 app.py 统一清 localStorage（点 6）。
+    _cjs = (
+        "<script>(function(){"
+        "var doc=window.parent.document,KEY='wh_containers_list_scroll',n=0;"
+        "function scroller(){var df=doc.querySelector('.st-key-container_list_wrap [data-testid=\"stDataFrame\"]');"
+        "return df?df.querySelector('.dvn-scroller'):null;}"
+        "function bind(){var g=scroller();"
+        "if(g&&!g.__whBound){g.__whBound=1;"
+        "g.addEventListener('scroll',function(){try{localStorage.setItem(KEY,g.scrollTop);}catch(e){}},{passive:true});}"
+        "if(g){var y=parseInt(localStorage.getItem(KEY)||'0',10);"
+        "[0,150,400,800,1500].forEach(function(t){setTimeout(function(){var gg=scroller();if(gg)gg.scrollTop=y;},t);});"
+        "return true;}return false;}"
+        "(function tryBind(){if(bind()||++n>40)return;setTimeout(tryBind,150);})();"
+        "})();</script>"
+    )
+    st.components.v1.html(_cjs, height=0)
 
 
 # ==================== 卡片视图（Phase 6） ====================
@@ -632,6 +673,11 @@ def render_card_view(conn, containers_df):
 
                 if st.button(i18n.t("containers.open_detail"), key=f"ccard_{row['id']}",
                              use_container_width=True):
+                    # 互斥：清掉其它 Tab 的详情/子页态（同列表 Open Details）
+                    st.session_state.detail_item_id = None
+                    st.session_state.edit_item_id = None
+                    st.session_state.add_item_mode = False
+                    st.session_state.tree_detail_id = None
                     st.session_state.container_detail_id = row['id']
                     st.rerun()
 

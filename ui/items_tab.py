@@ -39,6 +39,7 @@ def _restore_nav_origin():
     src = orig.get("source")
     if src == "items":
         if orig.get("view") == "card":
+            st.session_state.view_mode = "card"   # 卡片视图返回须先切回卡片视图，否则会落到列表且锚点失效
             st.session_state.card_page = orig.get("card_page", st.session_state.get("card_page", 1))
             st.session_state.scroll_to_card = orig.get("item_id")
         else:
@@ -331,6 +332,10 @@ def render_edit_mode(conn, item_data, container_options):
 # ==================== 详情页 ====================
 
 def render_detail_page(conn, item, container_options):
+    # 进入详情页默认置顶（点 3）：尤其从容器/树详情底部点进来时，窗口仍停在原列表底部，
+    # 不置顶会导致详情页也停在底部，观感异常。物品列表本身用内部 .dvn-scroller（非窗口滚动），
+    # 此 window 滚动置顶不影响列表滚动记忆。
+    st.components.v1.html("<script>(function(){window.scrollTo(0,0);})();</script>", height=0)
     container_name = next((n for n, cid in container_options.items() if cid == item['container_id']),
                           i18n.t("items.unfiled"))
 
@@ -391,6 +396,8 @@ def render_detail_page(conn, item, container_options):
                     with bcols[j]:
                         if st.button(pno, key=f"imgpeer_{pid}_{img_id}",
                                      help=pname, use_container_width=True):
+                            st.session_state.container_detail_id = None
+                            st.session_state.tree_detail_id = None
                             st.session_state.detail_item_id = pid
                             st.rerun()
     else:
@@ -408,6 +415,8 @@ def render_detail_page(conn, item, container_options):
                 with row_cols[j]:
                     if st.button(f"{rno} {rname}", key=f"related_{rid}",
                                  use_container_width=True):
+                        st.session_state.container_detail_id = None
+                        st.session_state.tree_detail_id = None
                         st.session_state.detail_item_id = rid
                         st.rerun()
     else:
@@ -451,7 +460,7 @@ def render_list_view(conn, df_all, total_items, container_options):
     df_display['subtotal'] = df_display['subtotal'].apply(lambda x: f"¥{x:.2f}" if x else "")
 
     # --- 表格（Step 2：包一层带 key 容器供 CSS/JS 定位）---
-    # 不限制 height：表格随内容撑高、整页滚动，便于"返回原位置"（window.scrollY 还原）。
+    # 限高 300 紧凑网格（滚动容器是内部 .dvn-scroller，由下方 JS 捕获/还原 scrollTop）。
     # 表格先渲染，下方工具栏直接读 event.selection.rows 即本轮最新选中，
     # 不存在"选中结果滞后一帧"的问题；同时写回 session_state 供批量删除后清空。
     with st.container(key="item_list_wrap"):
@@ -501,6 +510,9 @@ def render_list_view(conn, df_all, total_items, container_options):
             if selected_count == 1:
                 if st.button(i18n.t("items.view_detail"), key="item_detail_active",
                              use_container_width=True):
+                    # 互斥：清掉其它 Tab 的详情态，避免残留的容器/树详情劫持活动 Tab
+                    st.session_state.container_detail_id = None
+                    st.session_state.tree_detail_id = None
                     st.session_state.detail_item_id = selected_item_ids[0]
                     st.session_state.nav_origin = {
                         "source": "items", "item_id": selected_item_ids[0],
@@ -547,13 +559,14 @@ def render_list_view(conn, df_all, total_items, container_options):
         with col_tool5:
             st.caption(i18n.t("items.list_count", total=total_items, n=selected_count))
 
-    # 列表滚动位置还原（A1 位置还原）：st.dataframe 真正的滚动容器是内部
+    # 列表滚动位置还原（A1 位置还原）：st.dataframe 真实滚动容器是内部
     # `.dvn-scroller`（glide 虚拟滚动，浏览器实测 scrollHeight≈10 万 px）；外层
     # .stDataFrame 只有几像素差，抓它必失败。且本脚本跑在 components iframe 里，
     # 必须 window.parent.document 才能摸到主页面 DOM（此前两个坑叠加导致还原失效）。
-    # 滚动时把 .dvn-scroller.scrollTop 存 localStorage；返回列表（restore_list_scroll
-    # 标记）时读回设置。浏览器实测见 tests/browser_test.py。
-    _restore = bool(st.session_state.get("restore_list_scroll", False))
+    # 捕获：滚动时把 .dvn-scroller.scrollTop 存 localStorage；还原：每次列表重渲染
+    # （含选中导致组件重挂载跳回顶部）都按上次位置还原——即使列表更新也停在原位（点 4）。
+    # 切 Tab 时由 app.py 统一清 localStorage（点 6），故切回本 Tab 回到顶部而非残留旧位置。
+    # 浏览器实测见 tests/browser_test.py。
     _js = (
         "<script>(function(){"
         "var doc=window.parent.document,KEY='wh_items_list_scroll',n=0;"
@@ -562,21 +575,15 @@ def render_list_view(conn, df_all, total_items, container_options):
         "return df?df.querySelector('.dvn-scroller'):null;}"
         "function bind(){var g=scroller();"
         "if(g&&!g.__whBound){g.__whBound=1;"
-        "g.addEventListener('scroll',function(){try{localStorage.setItem(KEY,g.scrollTop);}catch(e){}},{passive:true});"
-        "return true;}return !!g;}"
+        "g.addEventListener('scroll',function(){try{localStorage.setItem(KEY,g.scrollTop);}catch(e){}},{passive:true});}"
+        "if(g){var y=parseInt(localStorage.getItem(KEY)||'0',10);"
+        "[0,150,400,800,1500].forEach(function(t){setTimeout(function(){var gg=scroller();if(gg)gg.scrollTop=y;},t);});"
+        "return true;}return false;}"
         # 网格为异步挂载，脚本执行时常还不存在——轮询重试绑定（约 6s 上限）
         "(function tryBind(){if(bind()||++n>40)return;setTimeout(tryBind,150);})();"
+        "})();</script>"   # 注意：此串非 f-string，双写大括号会原样输出成 JS 语法错误
     )
-    if _restore:
-        _js += (
-            "var y=parseInt(localStorage.getItem(KEY)||'0',10);"
-            "[0,150,400,800,1500].forEach(function(t){setTimeout(function(){"
-            "var g=scroller();if(g)g.scrollTop=y;},t);});"
-        )
-    _js += "})();</script>"   # 注意：此串非 f-string，双写大括号会原样输出成 JS 语法错误
     st.components.v1.html(_js, height=0)
-    if _restore:
-        st.session_state.restore_list_scroll = False
 
 
 # ==================== 卡片视图 ====================
@@ -639,6 +646,9 @@ def render_card_view(conn, df_all, total_items):
                     st.caption(f"🏷️ {row['tags']}")
 
                 if st.button(i18n.t("items.open_detail"), key=f"card_{row['id']}", use_container_width=True):
+                    # 互斥：清掉其它 Tab 的详情态
+                    st.session_state.container_detail_id = None
+                    st.session_state.tree_detail_id = None
                     st.session_state.detail_item_id = row['id']
                     st.session_state.nav_origin = {
                         "source": "items", "item_id": row['id'], "view": "card",

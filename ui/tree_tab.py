@@ -61,6 +61,7 @@ def render(conn, search, tag_filter):
                                exit_key="tree_detail_id", key_prefix="tree_item")
         return
 
+
     st.subheader(i18n.t("app.tab.tree"))
 
     # 直接物品数统计：用全量计数（repo.count_items_by_container），不随侧边栏搜索/标签
@@ -135,6 +136,13 @@ def render(conn, search, tag_filter):
         with c2:
             if st.button(i18n.t("tree.view_detail"), key=f"tree_btn_{cid}",
                          use_container_width=True):
+                # 互斥：清掉其它 Tab 的详情/子页态，避免残留物品/容器详情劫持活动 Tab
+                st.session_state.detail_item_id = None
+                st.session_state.edit_item_id = None
+                st.session_state.add_item_mode = False
+                st.session_state.container_detail_id = None
+                st.session_state.edit_container_id = None
+                st.session_state.add_container_mode = False
                 st.session_state.tree_detail_id = cid   # 树 Tab 内就地打开详情页
                 st.toast(i18n.t("tree.goto_detail", name=nm))
                 st.rerun()
@@ -144,3 +152,16 @@ def render(conn, search, tag_filter):
 
     for top in children_map.get(None, []):
         render_node(top, 0)
+
+
+def render_detail_full(conn, cid):
+    """全屏渲染树详情（app.py 在 st.tabs 之外调用，等价于原树 Tab 内就地详情页）。"""
+    col1, _ = st.columns([1, 6])
+    with col1:
+        if st.button(i18n.t("items.back"), key="tree_detail_back",
+                     use_container_width=True):
+            st.session_state.tree_detail_id = None
+            st.session_state.jump_to_tab = 4  # 返回树 Tab
+            st.rerun()
+    render_detail_readonly(conn, repo.list_containers(conn), cid,
+                           exit_key="tree_detail_id", key_prefix="tree_item")
