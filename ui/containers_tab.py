@@ -325,8 +325,12 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
 
 # ==================== 容器详情页（Phase 6） ====================
 
-def render_detail_readonly(conn, containers_df, cid, exit_key, key_prefix="cd"):
-    """容器详情的只读部分：多图画廊 + 信息区 + 内部物品清单（可跳物品详情）。
+def render_detail_body(conn, containers_df, cid, exit_key, key_prefix="cd"):
+    """容器详情的内部内容：多图画廊 + 信息区 + 内部物品清单（可跳物品详情）。
+
+    注意：本函数只是详情页的"内容体"，返回/编辑/删除工具栏由 render_detail_page
+    统一包裹——并不存在"没有按钮的只读版"。所有入口（容器管理 Tab、容器树）共用
+    render_detail_page，因此详情页一律可编辑、可删除。
 
     容器管理 Tab 与容器树 Tab 共用，保证两处详情一致。
     - exit_key：物品清单跳转时清除的 session_state key（退出当前详情）
@@ -479,7 +483,7 @@ def render_detail_page(conn, containers_df, cid, exit_key="container_detail_id",
             else:
                 confirm_container_delete(conn, [cid], name)
 
-    render_detail_readonly(conn, containers_df, cid, exit_key=exit_key, key_prefix=key_prefix)
+    render_detail_body(conn, containers_df, cid, exit_key=exit_key, key_prefix=key_prefix)
 
 
 def render_detail_full(conn, cid):

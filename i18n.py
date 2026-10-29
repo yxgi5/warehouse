@@ -48,7 +48,7 @@ TRANSLATIONS = {
         # ==================== 侧边栏 ====================
         "sidebar.filter_title": "🔍 全局筛选",
         "sidebar.search_label": "搜索关键词",
-        "sidebar.search_placeholder": "名称/编号/特点/说明/平台/订单号/标签/容器",
+        "sidebar.search_placeholder": "名称/编号/特点/说明/平台/订单号/标签/容器（支持 * 通配，不区分大小写）",
         "sidebar.tag_label": "标签（逗号分隔）",
         "sidebar.sql_title": "🐍 SQL 控制台（高级用户）",
         "sidebar.sql_input": "输入 SQL 语句",
@@ -306,7 +306,7 @@ TRANSLATIONS = {
         # ==================== Sidebar ====================
         "sidebar.filter_title": "🔍 Global Filter",
         "sidebar.search_label": "Search",
-        "sidebar.search_placeholder": "name/no/features/desc/platform/order/tags/container",
+        "sidebar.search_placeholder": "name/no/features/desc/platform/order/tags/container (use * as wildcard, case-insensitive)",
         "sidebar.tag_label": "Tags (comma-separated)",
         "sidebar.sql_title": "🐍 SQL Console (advanced)",
         "sidebar.sql_input": "Enter SQL",

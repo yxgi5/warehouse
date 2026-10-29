@@ -21,7 +21,7 @@ import streamlit as st
 import pandas as pd
 import repo
 import i18n
-from ui.containers_tab import render_detail_readonly, render_detail_page
+from ui.containers_tab import render_detail_page
 
 # 展开状态集合（session 内记忆）：存已展开容器的 id
 _EXPAND_KEY = "tree_expanded"
@@ -47,20 +47,6 @@ def render(conn, search, tag_filter):
     containers_df = repo.list_containers(conn)
     if containers_df.empty:
         st.info(i18n.t("tree.empty"))
-        return
-
-    # ===== 详情模式：从树点击「详情」就地打开该容器的详情页 =====
-    if st.session_state.get("tree_detail_id") is not None:
-        cid = st.session_state.tree_detail_id
-        col1, _ = st.columns([1, 6])
-        with col1:
-            if st.button(i18n.t("items.back"), key="tree_detail_back",
-                         use_container_width=True):
-                st.session_state.tree_detail_id = None
-                st.session_state.tree_scroll_restore = True  # 返回后还原树滚动位置
-                st.rerun()
-        render_detail_readonly(conn, containers_df, cid,
-                               exit_key="tree_detail_id", key_prefix="tree_item")
         return
 
 
@@ -159,7 +145,7 @@ def render(conn, search, tag_filter):
     # 树用整页 stMain 滚动（无内部 scroller），故直接以 stMain.scrollTop 持久化。
     # - 始终挂一个保存监听：仅在树 Tab(idx=4)激活时把 stMain.scrollTop 写入 localStorage；
     #   window 级守卫保证只挂一次（每次 rerun 都重注入脚本，但不重复绑定）。
-    # - 从树详情返回(tree_detail_back 置 tree_scroll_restore)时：等待树 Tab 重新激活后，
+    # - 从树详情返回（render_detail_page 的 post_back 置 tree_scroll_restore）时：等待树 Tab 重新激活后，
     #   按存储值短窗(~700ms)还原 + 用户滚动即释放（与 items/containers 列表还原 v3 同思路），
     #   既压过框架自身滚动恢复，又不长时间霸占滚动条。
     st.components.v1.html(

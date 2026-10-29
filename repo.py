@@ -211,13 +211,23 @@ def get_filtered_data(conn, search, tag_filter):
                FROM items LEFT JOIN containers ON items.container_id = containers.id WHERE 1=1'''
     params = []
     if search:
-        query += ''' AND (items.name LIKE ? OR items.item_no LIKE ? OR items.features LIKE ?
-                     OR items.description LIKE ? OR items.platform LIKE ? OR items.order_no LIKE ?
-                     OR EXISTS (SELECT 1 FROM item_tags it JOIN tags t
-                                ON it.tag_id = t.id WHERE it.item_id = items.id AND t.name LIKE ?)
-                     OR containers.name LIKE ?)'''
-        p = f"%{search}%"
-        params.extend([p] * 8)
+        s = search.strip()
+        if s:
+            # 通配符：将用户习惯的文件通配符 * ? 转为 SQL LIKE 的 % _
+            s = s.replace('*', '%').replace('?', '_')
+            # 默认按子串匹配；用户已使用通配符则按其所写匹配
+            pattern = s if ('%' in s or '_' in s) else f"%{s}%"
+            cols = ["items.name", "items.item_no", "items.features",
+                    "items.description", "items.platform", "items.order_no",
+                    "containers.name"]
+            # LOWER 双端：SQLite 默认 LIKE 对非 ASCII 大小写敏感，统一转小写实现大小写不敏感
+            conds = " OR ".join(f"LOWER({c}) LIKE LOWER(?)" for c in cols)
+            tag_exists = ('''EXISTS (SELECT 1 FROM item_tags it JOIN tags t
+                                ON it.tag_id = t.id WHERE it.item_id = items.id
+                                AND LOWER(t.name) LIKE LOWER(?))''')
+            query += " AND (" + conds + " OR " + tag_exists + ")"
+            params.extend([pattern] * len(cols))
+            params.append(pattern)
     if tag_filter:
         tags = [t.strip() for t in tag_filter.split(',') if t.strip()]
         for tag in tags:
