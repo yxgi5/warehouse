@@ -511,6 +511,17 @@ def container_usage(conn, cid):
     return items, children
 
 
+def count_items_by_container(conn):
+    """每个容器的直属物品数（全量，不经过搜索/标签筛选）：{container_id: count}。
+
+    用于容器树徽标：树是容器导航器，应显示真实数量，不随物品列表的筛选态变化
+    （否则筛选态下某容器即使有许多物品也会显示为 0）。"""
+    rows = conn.execute(
+        "SELECT container_id, COUNT(*) FROM items WHERE container_id IS NOT NULL GROUP BY container_id"
+    ).fetchall()
+    return {int(cid): n for cid, n in rows}
+
+
 def item_count_map(conn, cids):
     """批量取每个容器的物品数：{cid: 数量}。消除容器卡片视图的 N+1 查询。"""
     if not cids:

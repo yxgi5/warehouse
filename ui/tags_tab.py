@@ -5,9 +5,10 @@ import repo
 import i18n
 
 
-def render(conn, search, tag_filter):
+def render(conn, search, tag_filter, df_shared=None):
     st.subheader(i18n.t("app.tab.tags"))
-    df_all = repo.get_filtered_data(conn, search, tag_filter)
+    # df_shared：app.py 每 rerun 只查一次的主数据（st.tabs 全量渲染下四个 Tab 共享）
+    df_all = df_shared if df_shared is not None else repo.get_filtered_data(conn, search, tag_filter)
     if df_all.empty:
         st.info(i18n.t("tags.none"))
     else:

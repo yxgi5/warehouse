@@ -59,6 +59,10 @@ def render(conn):
                         conn.execute(f"DELETE FROM {table} WHERE id=?", (img_id,))
                     conn.commit()
                     st.session_state.orphans = []
+                    # 同步重置进程级缓存（app.py 的 10 分钟复用），避免下次会话仍提示已清理的孤儿
+                    db.BG["orphans"] = []
+                    import time as _time
+                    db.BG["orphans_ts"] = _time.time()
                     st.toast(i18n.t("sidebar.orphan_cleaned", n=n), icon="🧹")
                     st.rerun()
                 except Exception as e:

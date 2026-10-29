@@ -505,6 +505,12 @@ def main():
     # → 树完全空白。修复用 isna() 后断言顶层容器名出现在 Tab5。
     # Phase 6 调整：树只显示容器层级与物品数统计，不列具体物品行。
     # 顶层容器名从库中动态读取（demo 数据可能用不同命名，硬编码会过时）。
+    # 回归保护：树徽标/summary 须显示真实数量，不受侧边栏搜索/标签筛选影响
+    # （此前用 get_filtered_data 计数，筛选态下某容器 item 数被算成 0，如 B0053）
+    at.sidebar.text_input(key="global_search").set_value("__no_such_item_zzz__")
+    at.sidebar.text_input(key="global_tag_filter").set_value("")
+    at.run()
+    assert len(at.exception) == 0, at.exception
     conn2 = sqlite3.connect("warehouse.db")
     top_names = [r[0] for r in conn2.execute(
         "SELECT name FROM containers WHERE parent_id IS NULL ORDER BY id LIMIT 3")]
@@ -516,6 +522,27 @@ def main():
         assert top_name in tree_text, f"容器树未渲染顶层容器「{top_name}」: {tree_text[:200]}"
     assert "ITEM_" not in tree_text, "容器树不应平铺具体物品行"
     print(f"✅ 容器树仅渲染顶层容器（{', '.join(top_names)}）且不平铺物品（isna 修复防回归）")
+
+    # 即便侧边栏搜索命中 0 件，summary 总物品数与单容器徽标仍须显示真实数量
+    conn_cnt = sqlite3.connect("warehouse.db")
+    total_items = conn_cnt.execute("SELECT COUNT(*) FROM items").fetchone()[0]
+    caps = [str(getattr(c, "value", "")) for c in at.caption]
+    assert any(str(total_items) in v for v in caps), f"树 summary 未显示真实总数 {total_items}: {caps}"
+    # 选一件顶层容器（直接含物品），断言其徽标 (子容器数/本容器item数) 用真实数量
+    brow = conn_cnt.execute(
+        "SELECT c.id, (SELECT COUNT(*) FROM items WHERE container_id=c.id) FROM containers c "
+        "WHERE c.parent_id IS NULL AND c.id IN (SELECT container_id FROM items) "
+        "ORDER BY 2 DESC LIMIT 1").fetchone()
+    if brow:
+        b_id, b_items = int(brow[0]), int(brow[1])
+        b_child = conn_cnt.execute("SELECT COUNT(*) FROM containers WHERE parent_id=?", (b_id,)).fetchone()[0]
+        conn_cnt.close()
+        badge = f"({b_child}/{b_items})"
+        assert badge in tree_text, f"树徽标未显示真实数量 {badge}: {tree_text[:300]}"
+        print(f"✅ 容器树徽标/summary 显示真实数量（徽标 {badge}；总数 {total_items}，不受侧边栏筛选影响）")
+    else:
+        conn_cnt.close()
+        print("⚠️ 无顶层容器直接含物品，跳过单容器徽标断言")
 
     # 默认折叠：有父级的二级容器默认不显示，需展开/搜索才可见
     conn2_sub = sqlite3.connect("warehouse.db")
@@ -560,6 +587,46 @@ def main():
     tree_labels_after = [str(getattr(b, "label", "")) for b in at.tabs[4].button]
     assert any(top_names[0] in v for v in tree_labels_after), "返回后容器树未重新渲染"
     print("✅ 容器树详情页返回按钮 → 回到树视图")
+
+    # 树内容器详情「Open Details」→ 打开物品详情（Items Tab），而非清回树页
+    # 回归背景：按钮只设 detail_item_id 并清 tree_detail_id，物品详情开在 Items Tab，
+    # 用户却停留在树 Tab 看到清回的树页。修复后另设 jump_to_tab=0 由 app.py JS 切 Tab
+    # （AppTest 不执行前端 JS，这里验证 session 状态链路；树/容器管理两处共用该函数）
+    conn_o = sqlite3.connect("warehouse.db")
+    row_o = conn_o.execute(
+        "SELECT container_id, id FROM items WHERE container_id IS NOT NULL ORDER BY id LIMIT 1").fetchone()
+    conn_o.close()
+    assert row_o, "库中无带物品的容器，无法验证 Open Details"
+    c_with_items, item_in_c = row_o
+    at.session_state["tree_detail_id"] = c_with_items
+    at.run()
+    assert len(at.exception) == 0, at.exception
+    open_btn = find_button(at.tabs[4], label_contains="Open Details")
+    assert open_btn is not None, "容器详情缺 Open Details 按钮"
+    open_btn.click()
+    at.run()
+    assert len(at.exception) == 0, at.exception
+    assert at.session_state["detail_item_id"] == item_in_c, "Open Details 未打开目标物品详情"
+    assert "tree_detail_id" not in at.session_state or at.session_state["tree_detail_id"] is None, \
+        "跳转后应退出树内容器详情"
+    # 来源记录：从树详情点开时 nav_origin 应记 source=tree + 目标 item（供 Back 精确回滚）
+    _no = at.session_state["nav_origin"] if "nav_origin" in at.session_state else None
+    assert _no and _no.get("source") == "tree" and _no.get("item_id") == item_in_c, \
+        "Open Details 未记录 tree 来源与目标 item（精确回出发点依据缺失）"
+    # Items Tab（tabs[0]）应渲染出物品详情子页面（无浏览态控制行 radio）
+    assert len(at.tabs[0].radio) == 0, "物品详情未在 Items Tab 渲染（浏览态 radio 不应出现）"
+    # A1：从树进入详情，Back 应回到「树内容器详情」而非物品列表顶层
+    back_det = find_button(at.tabs[0], label_contains="Back")
+    assert back_det is not None, "物品详情缺返回按钮"
+    back_det.click()
+    at.run()
+    assert len(at.exception) == 0, at.exception
+    _td = at.session_state["tree_detail_id"] if "tree_detail_id" in at.session_state else None
+    assert _td == c_with_items, "Back 未回到树内容器详情"
+    at.session_state["tree_detail_id"] = None
+    at.session_state["scroll_to_container_item"] = None
+    at.run()
+    print("✅ 树内容器详情 Open Details → 物品详情 → Back 回到树内容器详情并定位到原 item 行（A1+精确回出发点）")
 
     # 恢复浏览状态
     at.session_state["container_detail_id"] = None

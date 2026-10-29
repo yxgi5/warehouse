@@ -173,6 +173,7 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
                     st.toast(saved_msg, icon="✅")
                     st.session_state.edit_container_id = None
                     st.session_state.add_container_mode = False
+                    st.session_state.jump_to_tab = 5  # 返回容器 Tab
                     st.rerun()   # 全局容器选项由 app.py 顶层重新查询
                 except Exception as e:
                     db.logger.exception("保存容器失败")
@@ -183,6 +184,7 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
             st.session_state.add_container_staged_photos = []
             st.session_state.edit_container_id = None
             st.session_state.add_container_mode = False
+            st.session_state.jump_to_tab = 5  # 返回容器 Tab
             st.rerun()
         if delete_btn:
             # 检查容器是否可删除（无物品且无子容器）
@@ -400,12 +402,36 @@ def render_detail_readonly(conn, containers_df, cid, exit_key, key_prefix="cd"):
                              use_container_width=True):
                     st.session_state.detail_item_id = item_id
                     st.session_state[exit_key] = None   # 跳走即退出当前详情
+                    # 记录来源：详情页 Back 时回到原页面（容器详情 / 树详情）而非物品列表顶层
+                    if exit_key == "container_detail_id":
+                        st.session_state.nav_origin = {"source": "container", "item_id": item_id,
+                                                      "container_detail_id": cid}
+                    elif exit_key == "tree_detail_id":
+                        st.session_state.nav_origin = {"source": "tree", "item_id": item_id,
+                                                      "tree_detail_id": cid}
+                    # 物品详情渲染在「物品浏览」Tab：设置跳转标记，app.py 用 JS 切 Tab
+                    st.session_state.jump_to_tab = 0
                     st.toast(i18n.t("containers.jump_item_hint"), icon="📄")
                     st.rerun()
             with c2:
+                # 每物品行锚点：从详情点开 item 再返回时 scrollIntoView 精确滚回这行
+                st.markdown(f'<a id="cont-item-{item_id}"></a>', unsafe_allow_html=True)
                 st.write(f"{item_no} - {item_name}")
     else:
         st.caption(i18n.t("common.no_items"))
+
+    # 精确回出发点：从容器/树详情点开 item 再返回时，滚动到原来那件物品的行
+    # （详情页 item 列表是逐行普通 DOM，scrollIntoView 可靠；延迟较长为避开 app.py
+    # 切 Tab 的 JS，确保先切到本 Tab 再滚动，否则在隐藏 Tab 上滚动无效）
+    _ctarget = st.session_state.get("scroll_to_container_item")
+    if _ctarget is not None:
+        st.components.v1.html(
+            f"<script>(function(){{var doc=window.parent.document,"
+            f"el=doc.getElementById('cont-item-{int(_ctarget)}');"
+            f"if(el){{[200,500,900,1500].forEach(function(t){{setTimeout(function(){{"
+            f"el.scrollIntoView({{block:'center'}});}},t);}});}}}})();</script>",
+            height=0)
+        st.session_state.scroll_to_container_item = None
 
 
 def render_detail_page(conn, containers_df, cid):
@@ -424,6 +450,7 @@ def render_detail_page(conn, containers_df, cid):
     with col1:
         if st.button(i18n.t("items.back"), key="cd_back", use_container_width=True):
             st.session_state.container_detail_id = None
+            st.session_state.jump_to_tab = 5  # 返回容器 Tab（详情在 tabs 之外渲染，否则会重置到首个 Tab）
             st.rerun()
     with col3:
         # 编辑后保留 container_detail_id，保存/取消后回到详情页
@@ -439,6 +466,19 @@ def render_detail_page(conn, containers_df, cid):
                 confirm_container_delete(conn, [cid], name)
 
     render_detail_readonly(conn, containers_df, cid, exit_key="container_detail_id", key_prefix="cd")
+
+
+def render_detail_full(conn, cid):
+    """全屏渲染容器详情（app.py 在 st.tabs 之外调用，规避 st.tabs 1.40 无 key 的 Tab 重置问题）。"""
+    render_detail_page(conn, repo.list_containers(conn), cid)
+
+
+def render_edit_full(conn, cid):
+    render_edit_form(conn, repo.list_containers(conn), is_edit=True, cont_id=cid)
+
+
+def render_add_full(conn):
+    render_edit_form(conn, repo.list_containers(conn), is_edit=False)
 
 
 # ==================== 列表视图 ====================
@@ -497,7 +537,16 @@ def render_browse(conn, containers_df):
             if selected_count == 1:
                 if st.button(i18n.t("containers.open_detail"), key="container_detail_active",
                              use_container_width=True):
+                    # 互斥：打开容器详情前清掉其它 Tab 的详情/子页态，避免残留的
+                    # detail_item_id 让「物品浏览」Tab 在后台仍渲染旧物品详情、进而劫持活动 Tab
+                    st.session_state.detail_item_id = None
+                    st.session_state.edit_item_id = None
+                    st.session_state.add_item_mode = False
+                    st.session_state.tree_detail_id = None
                     st.session_state.container_detail_id = selected_container_ids[0]
+                    # 本次来源是列表（非卡片）：清掉可能残留的卡片锚点标记，
+                    # 避免之后切到卡片视图时被旧标记拽到旧位置
+                    st.session_state.container_card_return = None
                     st.rerun()
             else:
                 st.button(i18n.t("containers.open_detail"), key="container_detail_disabled",
@@ -506,6 +555,7 @@ def render_browse(conn, containers_df):
             if selected_count == 1:
                 if st.button(i18n.t("items.edit"), key="container_edit_active", use_container_width=True):
                     st.session_state.edit_container_id = selected_container_ids[0]
+                    st.session_state.container_card_return = None   # 同上：来源是列表
                     st.rerun()
             else:
                 st.button(i18n.t("items.edit"), key="container_edit_disabled", disabled=True, use_container_width=True)
@@ -527,6 +577,38 @@ def render_browse(conn, containers_df):
                 st.button(i18n.t("items.delete"), key="container_delete_disabled", disabled=True, use_container_width=True)
         with col_tool4:
             st.caption(i18n.t("containers.list_count", total=len(containers_df), n=selected_count))
+
+    # 容器管理列表滚动位置还原（点 5）：与物品列表同机制（.dvn-scroller + localStorage），
+    # 打开容器详情再返回（cd_back）时停在原位置。v3 短窗强制 + 用户滚动即释放
+    # （同 items v3）：消除"返回时顶/底交替闪、最后停在顶"——长窗反复设 scrollTop
+    # 与 glide 初始化(0)互相抢位；现仅压过初始抖动后交还用户。
+    # 监听仅当滚动元素正是已还原元素时才写回，避免重挂载瞬间把 0 写进存储。
+    # 切 Tab 由 app.py 统一清 localStorage（点 6）。
+    _cjs = (
+        "<script>(function(){"
+        "var doc=window.parent.document,KEY='wh_containers_list_scroll',last=null;"
+        "function scroller(){var df=doc.querySelector('.st-key-container_list_wrap [data-testid=\"stDataFrame\"]');"
+        "return df?df.querySelector('.dvn-scroller'):null;}"
+        "function save(){if(this===last){try{localStorage.setItem(KEY,this.scrollTop);}catch(e){}}}"
+        "function enforce(g,val,ms){var t0=Date.now(),stopped=false,el=g,win=window.parent;"
+        "function set(){el.scrollTop=val;}"
+        "function release(){stopped=true;}"
+        "if(!window.__whRelSet){window.__whRelSet=new Set();"
+        "function fire(e){var t=e.target;if(e.type==='keydown'&&t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return;window.__whRelSet.forEach(function(fn){fn();});}"
+        "win.addEventListener('wheel',fire,{passive:true,capture:true});"
+        "win.addEventListener('touchmove',fire,{passive:true,capture:true});"
+        "win.addEventListener('keydown',fire,{capture:true});}"
+        "window.__whRelSet.add(release);"
+        "function onScroll(){if(Math.abs(el.scrollTop-val)>2)stopped=true;}"
+        "el.addEventListener('scroll',onScroll,{passive:true});"
+        "function loop(){if(stopped){window.__whRelSet.delete(release);return;}set();if(Date.now()-t0<ms)requestAnimationFrame(loop);else window.__whRelSet.delete(release);}loop();}"
+        "function tick(){var g=scroller();if(!g)return;"
+        "if(!g.__whBound){g.__whBound=1;g.addEventListener('scroll',save,{passive:true});}"
+        "if(g!==last){last=g;var y=parseInt(localStorage.getItem(KEY)||'0',10);enforce(g,y,700);}}"
+        "[0,120,300,600,1000,1600,2400,4000].forEach(function(t){setTimeout(tick,t);});"
+        "})();</script>"
+    )
+    st.components.v1.html(_cjs, height=0)
 
 
 # ==================== 卡片视图（Phase 6） ====================
@@ -589,6 +671,9 @@ def render_card_view(conn, containers_df):
         cols = st.columns(4)
         for idx, row in df_page.iterrows():
             with cols[idx % 4]:
+                # 每卡锚点：从卡片进详情再 Back 时 scrollIntoView 精确回到原卡（点 5，
+                # 与物品卡片视图 card-item-{id} 同机制）
+                st.markdown(f'<a id="card-container-{int(row["id"])}"></a>', unsafe_allow_html=True)
                 img = first_imgs.get(row['id'])
                 if img and os.path.exists(img):
                     html = _card_img_markdown(img, f"ccard_img_{int(row['id'])}")
@@ -608,7 +693,14 @@ def render_card_view(conn, containers_df):
 
                 if st.button(i18n.t("containers.open_detail"), key=f"ccard_{row['id']}",
                              use_container_width=True):
+                    # 互斥：清掉其它 Tab 的详情/子页态（同列表 Open Details）
+                    st.session_state.detail_item_id = None
+                    st.session_state.edit_item_id = None
+                    st.session_state.add_item_mode = False
+                    st.session_state.tree_detail_id = None
                     st.session_state.container_detail_id = row['id']
+                    # 记录来源卡：cd_back 回卡片视图时 scrollIntoView 到该卡（点 5）
+                    st.session_state.container_card_return = int(row['id'])
                     st.rerun()
 
         if total_pages > 1:
@@ -623,6 +715,25 @@ def render_card_view(conn, containers_df):
                     if st.session_state.container_card_page < total_pages:
                         st.session_state.container_card_page += 1
                         st.rerun()
+
+    # 卡片视图位置还原（点 5）：若标记了 container_card_return（从卡片进详情时记录），
+    # 滚动到对应卡锚点后清除。容器卡片用页面(stMain)滚动，无 localStorage 记忆，
+    # 锚点是唯一可靠的还原手段（stMain scrollTop 数值跨内容切换无意义）。
+    # 短窗(700ms)内多次 scrollIntoView 压过初始抖动 + 用户滚动即释放（避免返回时
+    # 反复 scrollIntoView 引起顶/底交替闪）。
+    _target = st.session_state.get("container_card_return")
+    if _target is not None:
+        st.components.v1.html(
+            f"<script>(function(){{var doc=window.parent.document,"
+            f"el=doc.getElementById('card-container-{int(_target)}');"
+            f"if(el){{var t0=Date.now(),stopped=false,lastOur=-1;"
+            f"function set(){{lastOur=Date.now();el.scrollIntoView({{block:'center'}});}}"
+            f"function onScroll(){{if(Date.now()-lastOur<50)return;stopped=true;}}"
+            f"doc.querySelector('section[data-testid=\"stMain\"]').addEventListener('scroll',onScroll,{{passive:true}});"
+            f"function loop(){{if(stopped)return;set();if(Date.now()-t0<700)requestAnimationFrame(loop);}}loop();"
+            f"[0,150,400].forEach(function(t){{setTimeout(set,t);}});}}}})();</script>",
+            height=0)
+        st.session_state.container_card_return = None
 
 
 def render(conn):
@@ -685,6 +796,13 @@ def render(conn):
                              use_container_width=True):
                     st.session_state.list_fullscreen = True
                     st.rerun()
+
+    # 页面滚动锁定（需求：页面不能滚，只有 list 内部滚）：list 视图注入 :root 变量，
+    # app.py 同步 JS 按活动 Tab + 变量给 body 加 wh-lock-scroll（stMain overflow:hidden）。
+    # 卡片视图页面本身要滚动，不锁；变量写在 Tab 面板内，子页面 rerun 时自动解除。
+    st.markdown(
+        f"<style>:root{{--wh-containers-lock:{'1' if st.session_state.container_view_mode == 'list' else '0'}}}</style>",
+        unsafe_allow_html=True)
 
     if st.session_state.container_view_mode == "list":
         render_browse(conn, containers_df)
