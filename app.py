@@ -616,23 +616,45 @@ components.html(f"""
         [0, 60, 200, 500].forEach(function (t) {{ setTimeout(jumpFn, t); }});
     }}
     if (scrollTop) {{
-        // 进入子页强制置顶。关键：只在 ~700ms 短窗内强制，且一旦用户自己滚动就立即释放——
-        // 否则像旧版那样在 0~2400ms 里反复 scrollTop=0，用户下滚会被反复拽回顶部（点 3 实测
-        // 闪烁/弹回）。短窗足够压过框架自身的滚动恢复；之后把滚动权交还用户。
+        // 进入子页强制置顶。关键：只在 ~700ms 短窗内强制压过框架滚动恢复，然后交还用户。
+        // 释放判据（点 3 实测"立即下滚仍闪"的根因已修）：
+        //   - 旧版用 50ms 时间窗判断"用户滚动"，但 rAF 每~16ms 把 scrollTop=0 写回，
+        //     导致用户滚动事件永远被当成"我们写的"→ 全程(700ms)和下滚打架 → 闪。
+        //   - 新版改监听【用户输入事件】wheel/touchmove/keydown（由真实输入产生、且先于 scroll
+        //     触发，不被我们的 set 产生）→ 用户一滚动立即 release；并以"滚动位置偏离目标值"
+        //     兜底（覆盖拖滚动条）。window 级监听只绑一次，当前活动的 release 经 window.__whRel 指向。
         function whEnforce(getEl, val, ms) {{
-            var doc = window.parent.document;
-            var t0 = Date.now(), stopped = false, lastOur = -1, el = null;
-            function set() {{ el = getEl(); if (!el) return; lastOur = Date.now(); el.scrollTop = val; }}
-            function onScroll() {{ if (Date.now() - lastOur < 50) return; stopped = true; }}
+            var doc = window.parent.document, win = window.parent;
+            var t0 = Date.now(), stopped = false, el = null;
+            function set() {{ el = getEl(); if (el) el.scrollTop = val; }}
+            function release() {{ stopped = true; }}
+            // 注意：必须用【Set】收集所有活动的 release——各 Tab 的列表还原 iframe 与
+            // 本入口置顶 iframe 会在同一次 rerun 里先后运行，若用单个指针，后运行的（隐藏
+            // Tab 的列表还原）会覆盖本入口的 release，导致详情页滚动触发错误的 release、
+            // 置顶强制继续与用户下滚打架而闪烁。Set 让每次用户输入唤醒全部活动 enforce 的释放。
+            if (!window.__whRelSet) {{
+                window.__whRelSet = new Set();
+                function fire(e) {{
+                    var t = e.target;
+                    if (e.type === 'keydown' && t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+                    window.__whRelSet.forEach(function(fn) {{ fn(); }});
+                }}
+                win.addEventListener('wheel', fire, {{passive:true, capture:true}});
+                win.addEventListener('touchmove', fire, {{passive:true, capture:true}});
+                win.addEventListener('keydown', fire, {{capture:true}});
+            }}
+            window.__whRelSet.add(release);
+            function onScroll() {{ if (el && Math.abs(el.scrollTop - val) > 2) stopped = true; }}
             function loop() {{
-                if (stopped) return;
+                if (stopped) {{ window.__whRelSet.delete(release); return; }}
                 set();
                 if (Date.now() - t0 < ms) requestAnimationFrame(loop);
+                else window.__whRelSet.delete(release);
             }}
             var tries = 0;
             (function attach() {{
                 var e = getEl();
-                if (e) {{ if (e !== el) {{ el = e; e.addEventListener('scroll', onScroll, {{passive:true}}); }} }}
+                if (e) {{ el = e; e.addEventListener('scroll', onScroll, {{passive:true}}); }}
                 else if (tries++ < 120) setTimeout(attach, 25);
             }})();
             loop();
