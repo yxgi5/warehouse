@@ -461,6 +461,7 @@ def render_list_view(conn, df_all, total_items, container_options):
             selection_mode="multi-row",
             on_select="rerun",
             use_container_width=True,
+            height=300,
             hide_index=True,
             column_config={
                 "id": None,
@@ -546,21 +547,33 @@ def render_list_view(conn, df_all, total_items, container_options):
         with col_tool5:
             st.caption(i18n.t("items.list_count", total=total_items, n=selected_count))
 
-    # 列表滚动位置还原（A1 位置还原）：表格已改为整页滚动，故捕获/还原 window.scrollY
-    # （dataframe 虚拟网格的内部 scrollTop 无法通过 JS 稳定抓取，已废弃该方案）。
-    # 滚动时把 window.scrollY 存 localStorage；返回列表（restore_list_scroll 标记）时读回。
+    # 列表滚动位置还原（A1 位置还原）：st.dataframe 真正的滚动容器是内部
+    # `.dvn-scroller`（glide 虚拟滚动，浏览器实测 scrollHeight≈10 万 px）；外层
+    # .stDataFrame 只有几像素差，抓它必失败。且本脚本跑在 components iframe 里，
+    # 必须 window.parent.document 才能摸到主页面 DOM（此前两个坑叠加导致还原失效）。
+    # 滚动时把 .dvn-scroller.scrollTop 存 localStorage；返回列表（restore_list_scroll
+    # 标记）时读回设置。浏览器实测见 tests/browser_test.py。
     _restore = bool(st.session_state.get("restore_list_scroll", False))
     _js = (
         "<script>(function(){"
-        "var KEY='wh_items_list_scroll';"
-        "window.addEventListener('scroll',function(){try{localStorage.setItem(KEY,window.scrollY);}catch(e){}},{passive:true});"
+        "var doc=window.parent.document,KEY='wh_items_list_scroll',n=0;"
+        # 限定物品列表容器：st.tabs 各 Tab 都可能渲染 dataframe，全局第一个未必是本列表
+        "function scroller(){var df=doc.querySelector('.st-key-item_list_wrap [data-testid=\"stDataFrame\"]');"
+        "return df?df.querySelector('.dvn-scroller'):null;}"
+        "function bind(){var g=scroller();"
+        "if(g&&!g.__whBound){g.__whBound=1;"
+        "g.addEventListener('scroll',function(){try{localStorage.setItem(KEY,g.scrollTop);}catch(e){}},{passive:true});"
+        "return true;}return !!g;}"
+        # 网格为异步挂载，脚本执行时常还不存在——轮询重试绑定（约 6s 上限）
+        "(function tryBind(){if(bind()||++n>40)return;setTimeout(tryBind,150);})();"
     )
     if _restore:
         _js += (
             "var y=parseInt(localStorage.getItem(KEY)||'0',10);"
-            "[0,80,200,400,800].forEach(function(t){setTimeout(function(){window.scrollTo(0,y);},t);});"
+            "[0,150,400,800,1500].forEach(function(t){setTimeout(function(){"
+            "var g=scroller();if(g)g.scrollTop=y;},t);});"
         )
-    _js += "})();</script>"
+    _js += "})();</script>"   # 注意：此串非 f-string，双写大括号会原样输出成 JS 语法错误
     st.components.v1.html(_js, height=0)
     if _restore:
         st.session_state.restore_list_scroll = False
@@ -650,7 +663,8 @@ def render_card_view(conn, df_all, total_items):
     _target = st.session_state.get("scroll_to_card")
     if _target is not None:
         st.components.v1.html(
-            f"<script>(function(){{var el=document.getElementById('card-item-{int(_target)}');"
+            f"<script>(function(){{var doc=window.parent.document,"
+            f"el=doc.getElementById('card-item-{int(_target)}');"
             f"if(el){{[0,80,200,400].forEach(function(t){{setTimeout(function(){{"
             f"el.scrollIntoView({{block:'center'}});}},t);}});}}}})();</script>",
             height=0)

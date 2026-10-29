@@ -10,6 +10,8 @@
 
 运行:  streamlit run app.py
 """
+import os
+
 import streamlit as st
 import streamlit.components.v1 as components
 import db
@@ -252,6 +254,25 @@ body.wh-list-fullscreen .st-key-fs_exit { display: block !important; }
 .st-key-container_add_photo_btn {
     margin-top: 47.5px !important;
 }
+/* 物品列表网格滚动条加粗并常显：.dvn-scroller 是 st.dataframe 真实滚动容器
+   （glide 虚拟滚动，scrollHeight 高达十万 px 级；外层 .stDataFrame 只差几 px）。
+   自定义 ::-webkit-scrollbar 后滚动条常驻可见，不再悬停才出现、细如发丝。 */
+[data-testid="stDataFrame"] .dvn-scroller::-webkit-scrollbar {
+    width: 14px; height: 14px;
+}
+[data-testid="stDataFrame"] .dvn-scroller::-webkit-scrollbar-thumb {
+    background: #949494; border-radius: 7px;
+    border: 3px solid transparent; background-clip: content-box;
+}
+[data-testid="stDataFrame"] .dvn-scroller::-webkit-scrollbar-thumb:hover {
+    background: #6b6b6b; border: 3px solid transparent; background-clip: content-box;
+}
+[data-testid="stDataFrame"] .dvn-scroller::-webkit-scrollbar-track {
+    background: rgba(128,128,128,.14); border-radius: 7px;
+}
+[data-testid="stDataFrame"] .dvn-scroller::-webkit-scrollbar-corner {
+    background: transparent;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -418,7 +439,8 @@ conn = get_conn()
 # 每会话一次自动备份：放在 init_db（含旧库表结构迁移）之前 —— 迁移会重写表结构，
 # 备份必须是迁移前的完整快照（迁移中断可手动恢复）；首次全新库时 db 尚不存在，
 # backup_data 跳过 db 只打包 photos，无害。
-if not st.session_state.backup_done:
+# WH_SKIP_AUTO_BACKUP=1 供自动化浏览器测试跳过 1.9GB photos 打包（不影响正常使用）
+if not st.session_state.backup_done and os.environ.get("WH_SKIP_AUTO_BACKUP") != "1":
     try:
         st.session_state.last_backup = db.backup_data()
     except Exception as e:

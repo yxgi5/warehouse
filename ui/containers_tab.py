@@ -424,7 +424,8 @@ def render_detail_readonly(conn, containers_df, cid, exit_key, key_prefix="cd"):
     _ctarget = st.session_state.get("scroll_to_container_item")
     if _ctarget is not None:
         st.components.v1.html(
-            f"<script>(function(){{var el=document.getElementById('cont-item-{int(_ctarget)}');"
+            f"<script>(function(){{var doc=window.parent.document,"
+            f"el=doc.getElementById('cont-item-{int(_ctarget)}');"
             f"if(el){{[200,500,900,1500].forEach(function(t){{setTimeout(function(){{"
             f"el.scrollIntoView({{block:'center'}});}},t);}});}}}})();</script>",
             height=0)
