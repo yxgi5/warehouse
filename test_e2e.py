@@ -505,6 +505,12 @@ def main():
     # → 树完全空白。修复用 isna() 后断言顶层容器名出现在 Tab5。
     # Phase 6 调整：树只显示容器层级与物品数统计，不列具体物品行。
     # 顶层容器名从库中动态读取（demo 数据可能用不同命名，硬编码会过时）。
+    # 回归保护：树徽标/summary 须显示真实数量，不受侧边栏搜索/标签筛选影响
+    # （此前用 get_filtered_data 计数，筛选态下某容器 item 数被算成 0，如 B0053）
+    at.sidebar.text_input(key="global_search").set_value("__no_such_item_zzz__")
+    at.sidebar.text_input(key="global_tag_filter").set_value("")
+    at.run()
+    assert len(at.exception) == 0, at.exception
     conn2 = sqlite3.connect("warehouse.db")
     top_names = [r[0] for r in conn2.execute(
         "SELECT name FROM containers WHERE parent_id IS NULL ORDER BY id LIMIT 3")]
@@ -516,6 +522,27 @@ def main():
         assert top_name in tree_text, f"容器树未渲染顶层容器「{top_name}」: {tree_text[:200]}"
     assert "ITEM_" not in tree_text, "容器树不应平铺具体物品行"
     print(f"✅ 容器树仅渲染顶层容器（{', '.join(top_names)}）且不平铺物品（isna 修复防回归）")
+
+    # 即便侧边栏搜索命中 0 件，summary 总物品数与单容器徽标仍须显示真实数量
+    conn_cnt = sqlite3.connect("warehouse.db")
+    total_items = conn_cnt.execute("SELECT COUNT(*) FROM items").fetchone()[0]
+    caps = [str(getattr(c, "value", "")) for c in at.caption]
+    assert any(str(total_items) in v for v in caps), f"树 summary 未显示真实总数 {total_items}: {caps}"
+    # 选一件顶层容器（直接含物品），断言其徽标 (子容器数/本容器item数) 用真实数量
+    brow = conn_cnt.execute(
+        "SELECT c.id, (SELECT COUNT(*) FROM items WHERE container_id=c.id) FROM containers c "
+        "WHERE c.parent_id IS NULL AND c.id IN (SELECT container_id FROM items) "
+        "ORDER BY 2 DESC LIMIT 1").fetchone()
+    if brow:
+        b_id, b_items = int(brow[0]), int(brow[1])
+        b_child = conn_cnt.execute("SELECT COUNT(*) FROM containers WHERE parent_id=?", (b_id,)).fetchone()[0]
+        conn_cnt.close()
+        badge = f"({b_child}/{b_items})"
+        assert badge in tree_text, f"树徽标未显示真实数量 {badge}: {tree_text[:300]}"
+        print(f"✅ 容器树徽标/summary 显示真实数量（徽标 {badge}；总数 {total_items}，不受侧边栏筛选影响）")
+    else:
+        conn_cnt.close()
+        print("⚠️ 无顶层容器直接含物品，跳过单容器徽标断言")
 
     # 默认折叠：有父级的二级容器默认不显示，需展开/搜索才可见
     conn2_sub = sqlite3.connect("warehouse.db")

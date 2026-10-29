@@ -63,10 +63,10 @@ def render(conn, search, tag_filter):
 
     st.subheader(i18n.t("app.tab.tree"))
 
-    # 直接物品数统计（配合侧边栏筛选；空 df 时 groupby 会崩，需兜底）
-    df_all = repo.get_filtered_data(conn, search, tag_filter)
-    item_counts = (df_all.groupby("container_id").size().to_dict()
-                   if not df_all.empty else {})
+    # 直接物品数统计：用全量计数（repo.count_items_by_container），不随侧边栏搜索/标签
+    # 筛选变化——树是容器导航器，应显示真实数量；否则筛选态下某容器即使有许多物品
+    # 也会显示为 0（用户反馈 B0053 实际不少却显示 0）。
+    item_counts = repo.count_items_by_container(conn)
 
     # ===== 构建层级索引 =====
     rows = containers_df.sort_values("id")
@@ -81,7 +81,8 @@ def render(conn, search, tag_filter):
         name_of[cid] = str(r["name"])
         loc_of[cid] = str(r.get("location") or "")
 
-    st.caption(i18n.t("tree.summary", containers=len(containers_df), items=len(df_all)))
+    st.caption(i18n.t("tree.summary", containers=len(containers_df),
+                      items=conn.execute("SELECT COUNT(*) FROM items").fetchone()[0]))
 
     # ===== 搜索 + 全部展开/收起 =====
     q = (st.text_input(i18n.t("tree.search"), key="tree_search") or "").strip().lower()
