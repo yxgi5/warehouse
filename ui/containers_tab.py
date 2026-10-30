@@ -86,7 +86,7 @@ def render_edit_form(conn, containers_df, is_edit, cont_id=None):
             st.rerun()
             return
         _, current_name, current_parent_id, current_location, current_note = cont_data
-        title = i18n.t("containers.edit_title", name=current_name)
+        title = i18n.t("containers.edit_title")
     else:
         current_name = ""
         current_parent_id = None

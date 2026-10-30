@@ -181,7 +181,9 @@ def start_edit(conn, item_id, container_options):
 
 
 def render_edit_mode(conn, item_data, container_options):
-    st.subheader(i18n.t("items.edit_title", item_no=item_data['item_no'], name=item_data['name']))
+    # 标题只保留动作文案（用户反馈：item_no/name 不上标题——下方表单的 ITEM No./Name
+    # 字段里已有；旧文案 "✏️ 编辑物品: {no} - {name}" 冗长且截断风险大）
+    st.subheader(i18n.t("items.edit_title"))
     with st.form("edit_item_form", clear_on_submit=False):
         # 逐行两列（与新增页同款）：每行行高取左右控件较大者，行起点严格对齐，
         # 不会因勾选框比输入框矮而错位。
@@ -335,7 +337,10 @@ def render_detail_page(conn, item, container_options):
     # 进入详情页默认置顶（点 3）：尤其从容器/树详情底部点进来时，窗口仍停在原列表底部，
     # 不置顶会导致详情页也停在底部，观感异常。物品列表本身用内部 .dvn-scroller（非窗口滚动），
     # 此 window 滚动置顶不影响列表滚动记忆。
-    st.components.v1.html("<script>(function(){window.scrollTo(0,0);})();</script>", height=0)
+    # height=0 但元素容器实测占 26px+gap，把详情内容顶下来（probe20 item_detail）；
+    # 包 key 容器交 CSS 整体隐藏（.st-key-detail_top_iframe），JS 照常执行
+    with st.container(key="detail_top_iframe"):
+        st.components.v1.html("<script>(function(){window.scrollTo(0,0);})();</script>", height=0)
     container_name = next((n for n, cid in container_options.items() if cid == item['container_id']),
                           i18n.t("items.unfiled"))
 

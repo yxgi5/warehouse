@@ -36,8 +36,11 @@ def render(conn, container_options):
     # 照片暂存区（表单外）：先选文件 → 「添加图片」加入暂存并预览 → 保存时一并生效
     staged = st.session_state.setdefault('add_staged_photos', [])
 
+    # 子页标题放表单外（与编辑页 render_edit_mode 同款布局）：st.form 自带边框盒
+    # +内边距，标题放里面会被包进盒子、上方多出一条空带（用户反馈：Add 页应与
+    # Edit 页布局一致；容器新增/编辑页的标题本就在表单外）。
+    st.subheader(i18n.t("add.title"))
     with st.form("add_item", clear_on_submit=False):
-        st.subheader(i18n.t("add.title"))
         # 逐行两列而非左右两个大列：每行行高取左右控件较大者，行起点严格对齐。
         # 之前左右两大列内控件独立堆叠，勾选框（无上方 label，比输入框矮）之后的
         # 行整体上移，与右栏错位。

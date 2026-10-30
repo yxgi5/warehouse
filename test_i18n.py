@@ -65,8 +65,11 @@ def main():
     container_map = repo.get_container_options(conn)
 
     import types
-    bad_csv = b"item_no,name,container,purchase_date,platform,order_no,price,features,description,tags\n" \
-              b",TestName,NoSuchBox,,,,abc,,,\n"
+    # 表头用 IMPORT_COLUMNS 动态构造：曾因硬编码漏加 quantity/unit，构造的 CSV
+    # 触发的是"表头错误"而非目标"容器不存在"错误，两项用例 ✗（2026-10-31 修）
+    hdr = ",".join(repo.IMPORT_COLUMNS)
+    bad_row = ",".join(["", "TestName", "NoSuchBox", "", "", "", "abc", "", "", "", "", ""])
+    bad_csv = (hdr + "\n" + bad_row + "\n").encode()
     fake = types.SimpleNamespace(name="bad.csv", getbuffer=lambda: bad_csv)
 
     i18n.set_lang("zh")
