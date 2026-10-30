@@ -300,3 +300,103 @@ header 与工具栏同步跟随到 `left=0/w=1904`）。
 - **实测**：data-layer 139 全绿（含 quantity/unit 落库与读取、CSV 导入）；i18n 15；smoke PASS；
   e2e PASS（新增表单含新字段、提交 0 异常）；AppTest 针对性验证新增页数量=5/单位=盒、编辑页
   改数量=9/单位=台均正确落库（框架残留控件时序怪癖，改用 e2e + data-layer 结论交叉确认）。
+
+### 主标题下方空白带压缩（Phase 10.5，已完成 + 回归修复）
+
+用户反馈：五种页面形态（列表 / 物品详情 / 物品编辑 / 容器详情 / 容器编辑）「My Warehouse」
+大标题下方都有一条纯空白带，要求压掉、省出的竖向空间留给有效显示内容；**大标题本身保留**。
+
+- 基线实测（`tests/browser_probe20.py`，标题底边↔内容顶边）：五种形态均 **32px**；
+  实测线性模型 gap = 32px + 标题容器 margin（来源是主区纵向 flex 的块间距）。
+- 改动（`app.py` css_inject 样式块，纯 CSS 一条规则）：标题容器 `margin-bottom: -28px`
+  → 空白带收到 **4px**，内容贴住标题。
+- **回归与修复（重要教训）**：第一版选择器
+  `.stElementContainer:has([data-testid="stHeadingWithActionElements"])` 未限定标题级别——
+  `st.subheader`（h3，如 Edit Item / Add New Item）同样带该外壳，被一起负 margin，
+  把下方表单拉上来压住子页标题（用户实测：Edit Item 标题压住 ITEM No. 边框）。
+  已限定为 `:has([data-testid="stHeadingWithActionElements"] h1)`，只命中大标题。
+- 修复后实测：五种形态 gap=4px；子页标题→表单 gap=0、overlap=False；probe19 6/6、probe14 8/8。
+
+### 第二轮（用户复检反馈，2026-10-31）：可见空带 46px / Add 页布局 / 退出编辑标题消失
+
+用户复检：① 列表页标题下空带仍在（红框），详情/编辑/添加都要去掉；② 物品 Add 页与
+Edit 页布局不一致（Add 标题被包进表单边框盒、上方空地更大），要求统一到 Edit 样式；
+③ 从列表进编辑、退出后「My Warehouse」标题不见了（停在上次滚动位置）。
+
+根因（probe20 升级为量「可视内容顶边」后暴露；量容器顶边会误判 4px 达标）：
+
+- ① **常驻导航 iframe**（app.py jump_to_tab/子页置顶占位，height=0）：元素容器实测仍占
+  26px + 16px flex gap ≈ 42px——五种形态标题下空带主源（此前「贡献≈0」结论有误）。
+  物品详情页另有同款置顶 iframe（ui/items_tab.py，26px）。
+- ② add_tab.py 把 `st.subheader` 放在 `st.form` 内部：表单自带边框盒+内边距（容器
+  新增/编辑页的标题本就在表单外，仅物品新增页不一致）。
+- ③ app.py 子页置顶只在「进入/切换子页」时触发（_scroll_top=1），「从子页回列表」
+  不归零 stMain.scrollTop——编辑页长内容下滚后退出，滚动残留（实测 scrollTop=260、
+  titleTop=-222，标题被顶出视口）。
+
+修复：
+
+- app.py：导航 iframe 包 `st.container(key="nav_iframe")` + CSS 整体隐藏（display:none
+  内 JS 照常执行，css_inject 先例）；items_tab 置顶 iframe 同款（key=detail_top_iframe）。
+- add_tab.py：subheader 移出 st.form，与编辑页同构。
+- app.py：回列表态（_subpage_sig is None）且两个 Tab 均为 list 视图时置
+  `_reset_main_scroll=1`，导航 iframe JS 定点把 stMain.scrollTop 归零（非强制定点重试；
+  cards/tree 有自己的锚点/记忆恢复，不启用以免打架）。
+
+修复后实测（probe20 可视间距）：列表 tablist 顶边 46→4px；编辑/添加/容器编辑三表单页
+数字完全一致（gap=4、sub→form gap=0）；编辑退出复现 scrollTop=0、titleTop=38（标题可见）。
+回归：probe19 6/6、probe14 8/8（含卡片滚动恢复）、probe15 tabs 不重挂载、i18n 17/17、
+data-layer 143/143、smoke PASS、e2e PASS。
+
+### 第三轮（2026-10-31）：测试基线修复（与本轮 UI 无关，A/B stash 验证）
+
+- test_i18n.py：CSV 表头串硬编码漏 quantity/unit（上轮加字段遗漏）→ 改用
+  `repo.IMPORT_COLUMNS` 动态构造，17/17。
+- test_e2e.py：多处 `at.tabs[N]` 断言过时（详情/编辑/新增/树详情自子页置顶打开架构起
+  均为 app.py 顶层渲染 + st.stop，tabs 不渲染）→ 子页面态改顶层收集，浏览态保留
+  at.tabs[N]；新增表单控件改按 key 定位（顶层收集会混入侧边栏下拉）。另为绕过
+  AppTest 框架容错缺陷（编辑保存清控件 state 后，框架收集旧树 KeyError/类型错），
+  在保存后 run 前按控件类型补种 session_state。PASS。
+- smoke_test.py：自动备份为后台线程（1.9GB photos 打包 1-2 分钟），AppTest 不等线程
+  → 「侧边栏含备份状态」竞态失败 → 轮询等待 backup_path（超时则 SKIP 不计 FAIL）。PASS。
+
+## 9. 产品 TODO 备忘（用户想法，2026-10-30 记录，未排期）
+
+> 用户提供的头脑风暴清单，记档备用，**优先级与排期由用户后续决定**。
+> 经核对 schema 与代码，**6 项均未实现**（核对证据附于各项；此前已完成的相关需求是
+> quantity/unit 数量字段与图片 sha256 去重池，不在本清单内）。
+
+### 状态模型提案（修订版）
+
+`status` 改 5 态，配套 `salvage_value`（残值金额，可空）：
+
+| 状态 | 含义 | 价值计入 |
+|------|------|----------|
+| 在用 | 正在使用 | 全额（单价×数量） |
+| 存放 | 库存备用 | 全额 |
+| 已借出 | 借出未还 | 全额（仍算资产） |
+| 已损坏 | 能用/待修，有残值 | 计入「残值」列，可在 Dashboard 单独看 |
+| 报废 | 无残值 | 0 |
+
+残值字段只在「已损坏」时有意义（报废 =0，无需设）。Dashboard 总价值可维持
+「在用+存放+借出」全额口径，另开「可回收残值合计」指标——坏的/报废的不会虚高总资产，
+又能看到还能回多少血。
+
+### TODO 清单（投入小 → 收益大）
+
+1. **状态字段**（含损坏/报废/残值）——吸纳上面 5 态 + `salvage_value`，联动 Dashboard 价值口径。
+   一个字段解决「借出忘还」「坏了/报废了还在算全额资产」两个痛点。
+   〔未实现：`items` 表无 `status` / `salvage_value` 列〕
+2. **低库存提醒**——最低库存阈值 + Dashboard 低于阈值清单（耗材快用完自动浮出）。
+   〔未实现：无阈值字段〕
+3. **快速补录同款「再添一件」**——复制现有物品字段生成草稿，录入成本降到几秒。
+   〔未实现：新增表单恒为空白，无复制入口〕
+4. **保修期/质保到期**——用已有购买日期 + 可选「保修月数」，自动算「剩余 X 天」。
+   〔未实现：无保修字段〕
+5. **回收站（软删除）**——删除先进回收站、30 天后真删，防手滑（现有删除不可逆）。
+   〔未实现：`repo.delete_item` 为硬删除〕
+6. **附件（发票/说明书）**——放开图片类型白名单单独放 pdf，挂电子发票/说明书。
+   〔未实现：`images` 仅 file_path+sha256，无类型列，仅支持图片〕
+
+要点：「损坏/报废」不是新增一条记录，而是融入状态字段（条 1），反而让整组需求更实用——
+之前只解决「借出」，现在连残值核算也顺手做了。

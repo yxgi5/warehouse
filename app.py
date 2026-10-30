@@ -116,6 +116,29 @@ header[data-testid="stHeader"] [data-testid="stToolbar"] {
 [data-testid="stMain"] [data-testid="stVerticalBlock"] > div:has(> div .st-key-css_inject) {
     display: none !important;
 }
+/* ★ 常驻导航 iframe（app.py 的 jump_to_tab/子页置顶占位）：height=0 但其元素容器
+   实测占 26px + 16px flex gap——把内容顶下去 ~42px，是标题下方空带的主要来源
+   （probe20 实测：列表页标题底边→tab 文本可视顶边 46px，详情/编辑/添加同）。
+   整体隐藏回收；display:none 内 iframe JS 照常执行（同 css_inject 先例）。 */
+[data-testid="stMain"] .st-key-nav_iframe {
+    display: none !important;
+}
+[data-testid="stMain"] [data-testid="stVerticalBlock"] > div:has(> div .st-key-nav_iframe) {
+    display: none !important;
+}
+/* 物品详情页置顶 iframe（ui/items_tab.py）：height=0 但元素容器占 26px+gap，
+   顶下详情工具栏（probe20 item_detail 实测）。同款隐藏，JS 照常执行。 */
+.st-key-detail_top_iframe { display: none !important; }
+[data-testid="stMain"] [data-testid="stVerticalBlock"] > div:has(> div .st-key-detail_top_iframe) {
+    display: none !important;
+}
+/* Phase 10.5：压缩「My Warehouse」大标题与内容之间的空白带（标题保留，仅去多余留白）。
+   ★ 作用域必须限定 h1（st.title）：st.subheader（h3，如 Edit Item / Add New Item）
+   同样带 stHeadingWithActionElements 外壳，若不限 h1 会把子页标题一起负 margin，
+   将下方表单拉上来压住标题（实测回归：Edit Item 标题压住 ITEM No. 边框）。 */
+.stMainBlockContainer .stElementContainer:has([data-testid="stHeadingWithActionElements"] h1) {
+    margin-bottom: -28px !important;
+}
 /* 工具栏按钮组作为整体在主内容区横向居中：侧边栏折叠/展开改变的是工具栏容器
    （fixed）的 left/width，按钮组中心始终保持在主内容区横向中心，不会跟着左移。
    内部列比例：物品 [2,2,2,2,5]（按钮×4 + 计数提示）、容器 [3,3,3,5]（按钮×3 +
@@ -588,23 +611,47 @@ elif _gs("container_detail_id") is not None:
 elif _gs("tree_detail_id") is not None:
     _subpage_sig = "tree_detail:%s" % _gs("tree_detail_id")
 
+_reset_main_scroll = 0
 if _subpage_sig is None:
     st.session_state.pop("_fs_sig", None)
     _scroll_top = 0
+    # 从子页回列表时清掉 stMain 上的滚动残留：编辑/新增页内容长，用户下滚后退出，
+    # 位置残留 → 回列表标题被顶出视口（「标题不见了」，probe20 复现 scrollTop=260、
+    # titleTop=-222）。仅 list 视图启用——卡片/树有自己的锚点/记忆恢复，置零会打架。
+    if (st.session_state.get("view_mode", "list") == "list"
+            and st.session_state.get("container_view_mode", "list") == "list"):
+        _reset_main_scroll = 1
 elif st.session_state.get("_fs_sig") != _subpage_sig:
     st.session_state["_fs_sig"] = _subpage_sig
     _scroll_top = 1
 else:
     _scroll_top = 0
 
-# 常驻「页面导航」iframe：jump_to_tab 跳转 + 子页置顶二合一，无条件渲染（见上方
-# ★ 说明——条件渲染会让 tabs 重挂载、活动 Tab 归零）。无动作时两个标志均为
-# 关闭态，脚本直接空操作。height=0 不可见。
-components.html(f"""
+# 常驻「页面导航」iframe：jump_to_tab 跳转 + 子页置顶 + 回列表归零，三合一，
+# 无条件渲染（见上方 ★ 说明——条件渲染会让 tabs 重挂载、活动 Tab 归零）。
+# 无动作时所有标志均为关闭态，脚本直接空操作。height=0 不可见；容器再经
+# .st-key-nav_iframe 整体隐藏（元素容器实测占 26px+gap，标题下空带主源），
+# display:none 内 JS 照常执行（css_inject 先例）。
+with st.container(key="nav_iframe"):
+    components.html(f"""
 <script>
 (function () {{
     var jump = {int(_jump)};
     var scrollTop = {_scroll_top};
+    var resetScroll = {int(_reset_main_scroll)};
+    if (resetScroll) {{
+        // 回列表：把子页残留的 stMain scrollTop 归零（非强制，定点重试等渲染完成）。
+        // 列表锁定态 stMain 不可被用户滚动（滚动发生在内部 dvn-scroller），重复 set 安全；
+        // 仅 list 视图启用本分支（cards/tree 有自己的锚点/记忆恢复，不能与之打架）。
+        function rstFn() {{
+            try {{
+                var doc = window.parent.document;
+                var m = doc.querySelector('section[data-testid="stMain"]') || doc.querySelector('[data-testid="stMain"]');
+                if (m && m.scrollTop > 0) m.scrollTop = 0;
+            }} catch (e) {{}}
+        }}
+        [0, 150, 600].forEach(function (t) {{ setTimeout(rstFn, t); }});
+    }}
     if (jump >= 0) {{
         function jumpFn() {{
             try {{
@@ -667,7 +714,7 @@ components.html(f"""
     }}
 }})();
 </script>
-""", height=0)
+    """, height=0)
 
 # 注意优先级：编辑/新增态必须排在对应详情态之前，否则残留在 session_state 里的
 # detail_* 会"劫持"活动页——这正是当初 Tab 被劫持 bug 的同类根因（详情态优先于编辑态）。
