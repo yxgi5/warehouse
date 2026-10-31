@@ -211,7 +211,7 @@ def main():
         db.save_shared_image(conn, fake_upload("evil.jpg", b"MZ\x90\x00" + b"\x00" * 16), "EVIL")
         check("save_shared_image 拒绝伪装文件", False, "未抛异常")
     except ValueError as e:
-        check("save_shared_image 拒绝伪装文件", "不符" in str(e), str(e))
+        check("save_shared_image 拒绝伪装文件", "无法识别" in str(e), str(e))
     # 新增格式支持：avif / heic 文件头魔数校验 + 白名单放行
     # AVIF/HEIC 均为 ISO-BMFF：4 字节长度后紧跟 'ftyp' 盒，品牌在字节 8~11
     check("白名单含 avif/heic",
@@ -232,7 +232,16 @@ def main():
         db.save_shared_image(conn, fake_upload("fake.avif", b"MZ\x90\x00" + b"\x00" * 24), "FAKE")
         check("avif 扩展名伪装被拒绝", False, "未抛异常")
     except ValueError as e:
-        check("avif 扩展名伪装被拒绝", "不符" in str(e), str(e))
+        check("avif 扩展名伪装被拒绝", "无法识别" in str(e), str(e))
+    # 内容识别优先于后缀（用户反馈：浏览器另存的 .jpg 实为 PNG/WebP 等，重传应自动识别）
+    check("jpg名PNG内容识别为 png", db._detect_image_ext(b"\x89PNG\r\n\x1a\n" + b"\x00" * 10) == "png")
+    check("jpg名WEBP内容识别为 webp",
+          db._detect_image_ext(b"RIFF\x00\x00\x00\x00WEBP" + b"\x00" * 10) == "webp")
+    try:
+        db._resolve_image(fake_upload("x.jpg", b"MZ\x90\x00" + b"\x00" * 16))
+        check("jpg名EXE内容被拒绝", False, "未抛异常")
+    except ValueError:
+        check("jpg名EXE内容被拒绝", True)
     # save_shared_image 并发冲突分支的语义前提（评审 P2）：IGNORE 撞唯一索引被忽略时
     # rowcount==0，而 lastrowid 仍指本连接上一次成功插入的行——代码以 rowcount 判断真插入
     cur_pre = conn.execute("INSERT INTO images (file_path, sha256) VALUES ('_pre.jpg', 'PREHASH')")
@@ -272,7 +281,7 @@ def main():
         repo.attach_item_images(conn, ai, [fake_upload("evil.webp", b"MZ\x90\x00" + b"\x00" * 16)])
         check("attach_item_images 拒绝非法文件", False, "未抛异常")
     except ValueError as e:
-        check("attach_item_images 拒绝非法文件", "不符" in str(e) or "不支持" in str(e), str(e))
+        check("attach_item_images 拒绝非法文件", "无法识别" in str(e), str(e))
     conn.rollback()
     check("attach_item_images 失败后无半拉关联",
           len(repo.load_images_full(conn, ai)) == n_before_ai)
@@ -290,12 +299,14 @@ def main():
         db.save_uploaded_file(fake_jpg, "MIME_EVIL")
         check("伪装 .jpg 被拒绝", False, "未抛异常")
     except ValueError as e:
-        check("伪装 .jpg 被拒绝", "不符" in str(e), str(e))
+        check("伪装 .jpg 被拒绝", "无法识别" in str(e), str(e))
+    # 无扩展名但有效 JPEG 内容：按内容识别为 jpg 并放行（不依赖后缀，正是修复点）
     try:
-        db.save_uploaded_file(fake_upload("noext", b"\xff\xd8\xff\xe0"), "MIME_NOEXT")
-        check("无扩展名被拒绝", False, "未抛异常")
+        noext_ok = db.save_uploaded_file(fake_upload("noext", b"\xff\xd8\xff\xe0"), "MIME_NOEXT")
+        check("无扩展名但有效内容被识别为 jpg",
+              noext_ok.endswith(".jpg") and os.path.exists(db.img_abs_path(noext_ok)), noext_ok)
     except ValueError as e:
-        check("无扩展名被拒绝", "缺少扩展名" in str(e), str(e))
+        check("无扩展名但有效内容被识别为 jpg", False, str(e))
     # webp 合法文件头通过校验（UI 上传白名单已放开 webp，见各 file_uploader type 列表）
     webp_ok = db.save_uploaded_file(
         fake_upload("ok.webp", b"RIFF" + b"\x00" * 4 + b"WEBPVP8 "), "MIME_WEBP")
@@ -305,12 +316,12 @@ def main():
         db.save_uploaded_file(fake_upload("evil.webp", b"RIFF" + b"\x00" * 4 + b"AVI "), "MIME_EVILW")
         check("伪装 .webp 被拒绝", False, "未抛异常")
     except ValueError as e:
-        check("伪装 .webp 被拒绝", "不符" in str(e), str(e))
+        check("伪装 .webp 被拒绝", "无法识别" in str(e), str(e))
     try:
         db.save_uploaded_file(fake_upload("doc.txt", b"plain text"), "MIME_TXT")
-        check("非法扩展名被拒绝", False, "未抛异常")
+        check("纯文本伪装被拒绝", False, "未抛异常")
     except ValueError as e:
-        check("非法扩展名被拒绝", "不支持的图片类型" in str(e), str(e))
+        check("纯文本伪装被拒绝", "无法识别" in str(e), str(e))
 
     # ---------- delete_item 唯一入口：单个删除 ----------
     d = repo.add_item(conn, "ITEM_20260820_004", "待删", cid, "2026-04-04", "", "", 0, "", "", "",

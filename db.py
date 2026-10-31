@@ -58,6 +58,46 @@ def get_conn():
 
 
 # --- 初始化数据库 ---
+def fix_image_extensions(conn):
+    """一次性修正：历史上传把 .jpg 名强加给非 JPEG 内容（浏览器另存为/来源误导），
+    导致展示 MIME 与内容不符、重传被「内容与扩展名不符」拒绝。按内容魔数重命名为
+    真实后缀并更新 DB，幂等（已正确则不动；文件缺失/重名冲突则跳过）。"""
+    for table in ('images', 'container_images'):
+        rows = conn.execute(f"SELECT id, file_path FROM {table}").fetchall()
+        for rid, path in rows:
+            if not path:
+                continue
+            abs_p = img_abs_path(path)
+            if not os.path.isfile(abs_p):
+                continue
+            try:
+                with open(abs_p, 'rb') as f:
+                    head = f.read(32)
+            except Exception:
+                continue
+            real = _detect_image_ext(head)
+            cur_ext = os.path.splitext(abs_p)[1].lower().lstrip('.')
+            if not real or real == cur_ext:
+                continue
+            new_abs = os.path.join(os.path.dirname(abs_p),
+                                   os.path.splitext(os.path.basename(abs_p))[0] + '.' + real)
+            if os.path.exists(new_abs):
+                continue
+            try:
+                os.rename(abs_p, new_abs)
+            except Exception:
+                continue
+            # 按原存储风格重建相对路径（absolute / relative / bare）
+            if os.path.isabs(path):
+                new_stored = new_abs
+            else:
+                d, base = os.path.split(path)
+                new_base = os.path.splitext(base)[0] + '.' + real
+                new_stored = os.path.join(d, new_base) if d else new_base
+            conn.execute(f"UPDATE {table} SET file_path=? WHERE id=?", (new_stored, rid))
+    conn.commit()
+
+
 def init_db(conn=None):
     """建表 + 迁移（幂等）。可传入已有连接（推荐），否则自建。"""
     own = conn is None
@@ -95,6 +135,7 @@ def init_db(conn=None):
             id INTEGER PRIMARY KEY, container_id INTEGER
                 REFERENCES containers(id) ON DELETE CASCADE,
             file_path TEXT, sort_order INTEGER)''')
+        fix_image_extensions(conn)     # 错后缀图片按内容重命名（幂等，建表后执行）
         migrate_tags(conn)     # 旧版 items.tags 逗号字符串一次性拆入关联表
         # 不内置种子容器：曾按「容器表为空」补插 Box_A01/Box_B02，用户删光容器后
         # 每次启动/rerun 都会复活，干扰真实录入。演示数据统一走 seed_demo_data.py。
@@ -403,38 +444,57 @@ def find_orphan_images(conn):
     return orphans
 
 
-# 上传图片扩展名白名单 + 各格式文件头魔数（落盘前校验真实类型，防伪装/损坏文件入库）
+# 上传图片扩展名白名单（仅用于说明支持的格式集合 / 详情页 file_uploader 的 type 过滤）。
+# 注意：落盘时**不依赖文件名后缀**识别格式——历史上传把 .jpg 名强加给非 JPEG 内容
+# （浏览器另存为/来源误导），依赖后缀校验会误报「内容与扩展名不符」并拒绝保存。
+# 一律以文件头魔数识别真实格式，支持的就按真实后缀落盘（见 _detect_image_ext）。
 ALLOWED_IMAGE_EXTS = ('jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic')
 
 
-def _validate_image_bytes(data, ext):
-    """按扩展名校验文件头魔数；不匹配抛 ValueError（由 UI 层捕获展示）。"""
+def _detect_image_ext(data):
+    """从文件头魔数识别真实图片格式，返回白名单内扩展名或 None（无法识别）。
+    不依赖文件名后缀——因此 '.jpg' 名的 PNG 会被正确识别为 png。"""
     head = data[:32]
-    ok = {
-        'jpg': head.startswith(b'\xff\xd8\xff'),
-        'jpeg': head.startswith(b'\xff\xd8\xff'),
-        'png': head.startswith(b'\x89PNG\r\n\x1a\n'),
-        'gif': head.startswith((b'GIF87a', b'GIF89a')),
-        'webp': head.startswith(b'RIFF') and head[8:12] == b'WEBP',
-        # AVIF/HEIC 均为 ISO-BMFF：4 字节长度后紧跟 'ftyp' 盒，品牌在字节 8~11
-        'avif': b'ftypavif' in head,
-        'heic': b'ftypheic' in head or b'ftypmif1' in head or b'ftyphevc' in head,
-    }.get(ext, False)
-    if not ok:
-        raise ValueError(f"文件内容与扩展名 .{ext} 不符，已拒绝保存（疑似伪装/损坏文件）")
+    if head.startswith(b'\xff\xd8\xff'):
+        return 'jpg'
+    if head.startswith(b'\x89PNG\r\n\x1a\n'):
+        return 'png'
+    if head.startswith((b'GIF87a', b'GIF89a')):
+        return 'gif'
+    if head.startswith(b'RIFF') and head[8:12] == b'WEBP':
+        return 'webp'
+    # AVIF/HEIC 均为 ISO-BMFF：4 字节长度后紧跟 'ftyp' 盒，品牌在字节 8~11
+    if b'ftypavif' in head:
+        return 'avif'
+    if b'ftypheic' in head or b'ftypmif1' in head or b'ftyphevc' in head:
+        return 'heic'
+    return None
+
+
+def _read_bytes(uploaded_file):
+    """从类 file_uploader 对象读全部字节（兼容 getbuffer / read）。"""
+    if hasattr(uploaded_file, 'getbuffer'):
+        return bytes(uploaded_file.getbuffer())
+    return bytes(uploaded_file.read())
+
+
+def _resolve_image(uploaded_file):
+    """校验并解析上传图片：返回 (ext, data)。以内容魔数为准识别真实格式；
+    无法识别为支持格式则抛 ValueError（由 UI 层捕获展示）。不再要求文件名带扩展名，
+    也不再用文件名后缀判定类型。"""
+    data = _read_bytes(uploaded_file)
+    ext = _detect_image_ext(data)
+    if ext is None:
+        raise ValueError("无法识别为支持的图片格式，已拒绝保存（疑似伪装/损坏文件；"
+                         "支持: jpg/png/gif/webp/avif/heic）")
+    return ext, data
 
 
 def _save_image(uploaded_file, prefix):
-    """通用落盘：扩展名白名单 + 文件头魔数校验，返回纯文件名。不合法抛 ValueError。"""
+    """通用落盘：按内容魔数识别真实格式后以真实后缀写入，返回纯文件名。
+    不合法（无法识别格式）抛 ValueError。"""
     os.makedirs(PHOTOS_DIR, exist_ok=True)
-    name = getattr(uploaded_file, 'name', '') or ''
-    if '.' not in name:
-        raise ValueError("文件名缺少扩展名，无法识别图片类型")
-    ext = name.rsplit('.', 1)[-1].lower()
-    if ext not in ALLOWED_IMAGE_EXTS:
-        raise ValueError(f"不支持的图片类型 .{ext}（支持: {'/'.join(ALLOWED_IMAGE_EXTS)}）")
-    data = bytes(uploaded_file.getbuffer()) if hasattr(uploaded_file, 'getbuffer') else bytes(uploaded_file.read())
-    _validate_image_bytes(data, ext)
+    ext, data = _resolve_image(uploaded_file)
     filename = f"{prefix}_{uuid.uuid4().hex[:4]}.{ext}"
     with open(os.path.join(PHOTOS_DIR, filename), "wb") as f:
         f.write(data)
@@ -448,16 +508,9 @@ def save_uploaded_file(uploaded_file, item_no):
 
 def save_shared_image(conn, uploaded_file, prefix):
     """物品图片落盘（图片池去重版）：按内容 sha256 查重，已存在则复用原 image_id、
-    不重复落盘；否则校验并写入 photos/ 后插入图片池。返回 image_id。
+    不重复落盘；否则按内容魔数识别真实格式后写入 photos/ 再插入图片池。返回 image_id。
     不合法文件抛 ValueError；并发同内容由 INSERT OR IGNORE + 部分唯一索引兜底。"""
-    name = getattr(uploaded_file, 'name', '') or ''
-    if '.' not in name:
-        raise ValueError("文件名缺少扩展名，无法识别图片类型")
-    ext = name.rsplit('.', 1)[-1].lower()
-    if ext not in ALLOWED_IMAGE_EXTS:
-        raise ValueError(f"不支持的图片类型 .{ext}（支持: {'/'.join(ALLOWED_IMAGE_EXTS)}）")
-    data = bytes(uploaded_file.getbuffer()) if hasattr(uploaded_file, 'getbuffer') else bytes(uploaded_file.read())
-    _validate_image_bytes(data, ext)
+    ext, data = _resolve_image(uploaded_file)
     digest = hashlib.sha256(data).hexdigest()
     row = conn.execute("SELECT id FROM images WHERE sha256=?", (digest,)).fetchone()
     if row:
