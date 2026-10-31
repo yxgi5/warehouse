@@ -362,17 +362,17 @@ def main():
     conn.close()
     print("✅ 测试数据已清理（含 item_links 级联清空）")
 
-    # ---- 6. Phase 5: 语言切换（global_lang 仅 set 一次；切英文后 label 变化即生效） ----
-    at.sidebar.selectbox(key="global_lang").set_value("English")
+    # ---- 6. Phase 5: 语言切换（选项值=语言码 global_lang_code；切英文后 label 变化即生效） ----
+    at.sidebar.selectbox(key="global_lang_code").set_value("en")
     at.run()
     assert len(at.exception) == 0, at.exception
     s1 = at.sidebar.text_input(key="global_search").label.strip()
     s2 = at.sidebar.text_input(key="global_tag_filter").label.strip()
     assert s1 == "Search", f"搜索框 label 未切换: {s1}"
     assert s2 == "Tags (comma-separated)", f"标签框 label 未切换: {s2}"
-    lang_val = at.sidebar.selectbox(key="global_lang").value
-    assert lang_val == "English", lang_val
-    print("✅ 语言切换 → 英文界面生效（Search / Tags / English）")
+    lang_val = at.sidebar.selectbox(key="global_lang_code").value
+    assert lang_val == "en", lang_val
+    print("✅ 语言切换 → 英文界面生效（Search / Tags / en）")
 
     # ---- 6.5 列表视图工具栏：常驻表格下方，未选中时禁用 + 提示（与 UI 设计一致） ----
     # 回归保护：工具栏按钮在列表视图中直接可定位（不滚动、不等二次 rerun）。
