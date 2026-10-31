@@ -72,8 +72,8 @@ def render(conn, container_options):
             # 勾选框放日期上一行且要紧贴日期：勾选框比带 label 的输入框矮约一个
             # label 高度，任其顶格的话行内剩余空白会把勾选框与下方日期隔开。
             # 加等高占位把勾选框“沉”到行底，与右侧数量输入框下沿平齐。
-            st.markdown('<div style="height:2.5rem" aria-hidden="true"></div>',
-                        unsafe_allow_html=True)
+            # 行高等高由 css_inject 的 .st-key-add_no_date { margin-top: 0.75rem }
+            # 实现（与编辑页同款，probe21 实测）；markdown 占位 div 渲染不出高度，弃用。
             # date_input 无法原生留空（不给 value 也默认今天）。勾选框是保存语义：
             # 默认勾选=无购买日期（存空）；取消勾选即可填日期。注意不能把 date_input
             # disabled 绑定到勾选框——form 内控件变化不触发 rerun，禁用状态不会刷新，

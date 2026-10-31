@@ -12,12 +12,19 @@ def render(conn):
     """渲染侧边栏，返回 (search, tag_filter) 供各 Tab 使用。"""
     with st.sidebar:
         # ---- 语言切换（写入 session_state.lang，rerun 后 app.py 顶部 set_lang 生效） ----
-        lang_opts = {"中文": "zh", "English": "en"}
+        # 选项值用语言码（跨语言稳定），显示文本走 i18n（lang.zh/lang.en）：
+        # 中文界面下选项显示「中文/英语」而非硬编码的 "English"（用户反馈：界面中文、
+        # 选项却是英文）。不能拿本地化文本当 option 值——切语言后旧会话残留的旧标签
+        # 会在新选项列表里失配，选择器会跳回首项。
+        lang_codes = ["zh", "en"]
         current_lang = st.session_state.get('lang', 'en')
-        cur_label = next((lb for lb, code in lang_opts.items() if code == current_lang), "English")
-        lang_label = st.selectbox(i18n.t("lang.label"), list(lang_opts.keys()),
-                                  index=list(lang_opts.keys()).index(cur_label), key="global_lang")
-        st.session_state.lang = lang_opts[lang_label]
+        if current_lang not in lang_codes:
+            current_lang = 'en'
+        lang_code = st.selectbox(
+            i18n.t("lang.label"), lang_codes,
+            index=lang_codes.index(current_lang), key="global_lang_code",
+            format_func=lambda c: i18n.t(f"lang.{c}"))
+        st.session_state.lang = lang_code
         i18n.set_lang(st.session_state.lang)   # 立即生效（sidebar 之后渲染的内容用新语言）
 
         st.divider()

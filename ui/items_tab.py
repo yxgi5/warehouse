@@ -208,15 +208,19 @@ def render_edit_mode(conn, item_data, container_options):
                                     key="edit_price")
         c1, c2 = st.columns(2)
         with c1:
-            # 勾选框放日期上一行且紧贴日期（等高占位使其沉到行底，原理同新增页）
-            st.markdown('<div style="height:2.5rem" aria-hidden="true"></div>',
-                        unsafe_allow_html=True)
+            # 勾选框放日期上一行且紧贴日期。行高等高由 css_inject 的
+            # .st-key-edit_no_date { margin-top: 0.75rem } 实现（probe21 实测：左格
+            # 16+12+40=68px 与右格数量控件等高；markdown 占位 div 渲染不出高度，弃用）。
             # 无日期勾选框是保存语义；date_input 不能 disabled 联动（form 内控件
             # 变化不 rerun，禁用态不刷新，会出现“取消勾选仍不可填”）
             no_date = st.checkbox(i18n.t("common.no_date"), key="edit_no_date",
                                   help=i18n.t("common.no_date_help"))
         with c2:
-            quantity = st.number_input(i18n.t("form.quantity"), min_value=1, step=1, value=1,
+            # 值由进入编辑时的 session_state 预填（render_edit_mode 开头 edit_quantity）；
+            # 不能再传 value=，否则与 session_state 双重初始化，Streamlit 每轮渲染弹
+            # 「created with a default value but also had its value set via the
+            # Session State API」黄条（Price 无显式 value= 故不警告，同理）
+            quantity = st.number_input(i18n.t("form.quantity"), min_value=1, step=1,
                                       key="edit_quantity")
         c1, c2 = st.columns(2)
         with c1:

@@ -132,6 +132,15 @@ header[data-testid="stHeader"] [data-testid="stToolbar"] {
 [data-testid="stMain"] [data-testid="stVerticalBlock"] > div:has(> div .st-key-detail_top_iframe) {
     display: none !important;
 }
+/* 「No purchase date」勾选框行等高贴合（probe21 实测校准）：右格（数量控件）
+   行高 68px；勾选框元素容器 40px（其中可见控件 28px，容器底部自带 12px 空隙）。
+   margin-top 1.75rem=28px → 左格 28+40=68px 与右格精确等高，可见控件沉到
+   容器底附近，勾选框→日期 label 缝隙 = 16px 标准行距，数量→单位同为 16px。
+   （0.75rem 实测缝隙 32px、无 margin 28px，均偏大；1.75rem 为校准值。） */
+[data-testid="stForm"] .st-key-add_no_date,
+[data-testid="stForm"] .st-key-edit_no_date {
+    margin-top: 1.75rem !important;
+}
 /* Phase 10.5：压缩「My Warehouse」大标题与内容之间的空白带（标题保留，仅去多余留白）。
    ★ 作用域必须限定 h1（st.title）：st.subheader（h3，如 Edit Item / Add New Item）
    同样带 stHeadingWithActionElements 外壳，若不限 h1 会把子页标题一起负 margin，
